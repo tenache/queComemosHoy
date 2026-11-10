@@ -1,0 +1,51 @@
+// Starter dishes: everyday home cooking in Argentina and Spain.
+// `mains` are category tags (pasta, pollo, arroz…), never staples like
+// cebolla, ajo, aceite or sal. They drive the "ingredient fatigue" penalty.
+
+const d = (id, name, emoji, cookMinutes, health, yum, mains, ingredients) => ({
+  id,
+  name,
+  emoji,
+  ingredients,
+  mains,
+  cookMinutes,
+  health,
+  yum,
+  liking: 0,
+  neverShow: false,
+});
+
+export const STARTER_DISHES = [
+  d('fideos-huevo', 'Fideos con huevo frito', '🍝', 15, 3, 4, ['pasta', 'huevo'], ['fideos', 'huevo', 'queso rallado']),
+  d('tortilla-papas', 'Tortilla de papas', '🥔', 40, 3, 4, ['papa', 'huevo'], ['papa', 'huevo', 'cebolla']),
+  d('milanesas-berenjena', 'Milanesas de berenjena', '🍆', 40, 4, 2, ['berenjena'], ['berenjena', 'huevo', 'pan rallado']),
+  d('pollo-curry', 'Pollo al curry con arroz', '🍛', 40, 3, 4, ['pollo', 'arroz'], ['pollo', 'arroz', 'curry', 'cebolla', 'crema']),
+  d('sopa-pollo', 'Sopa de pollo', '🍲', 50, 5, 3, ['pollo'], ['pollo', 'zanahoria', 'cebolla', 'apio', 'fideos']),
+  d('lentejas', 'Lentejas', '🥘', 50, 5, 3, ['legumbres'], ['lentejas', 'cebolla', 'zanahoria', 'papa', 'pimentón']),
+  d('pato-naranja', 'Pato a la naranja', '🦆', 150, 3, 5, ['pato'], ['pato', 'naranja', 'manteca', 'azúcar', 'vino blanco', 'caldo']),
+  d('milanesas-pure', 'Milanesas con puré', '🥩', 50, 2, 5, ['carne', 'papa'], ['carne', 'huevo', 'pan rallado', 'papa', 'leche', 'manteca']),
+  d('ravioles-tuco', 'Ravioles con tuco', '🥟', 25, 3, 4, ['pasta'], ['ravioles', 'tomate triturado', 'cebolla', 'ajo', 'queso rallado']),
+  d('noquis', 'Ñoquis con salsa', '🍝', 20, 2, 4, ['pasta'], ['ñoquis', 'tomate triturado', 'queso rallado']),
+  d('arroz-atun', 'Arroz con atún', '🍚', 20, 3, 3, ['arroz', 'pescado'], ['arroz', 'atún', 'huevo']),
+  d('tarta-jamon-queso', 'Tarta de jamón y queso', '🥧', 45, 2, 4, ['masa', 'queso'], ['tapa de tarta', 'jamón', 'queso', 'huevo']),
+  d('tarta-acelga', 'Tarta de acelga', '🥬', 50, 4, 3, ['masa', 'verdura'], ['tapa de tarta', 'acelga', 'huevo', 'cebolla', 'queso']),
+  d('empanadas-carne', 'Empanadas de carne', '🥟', 70, 2, 5, ['masa', 'carne'], ['tapas de empanada', 'carne picada', 'cebolla', 'huevo', 'aceitunas']),
+  d('pizza', 'Pizza casera', '🍕', 80, 2, 5, ['masa', 'queso'], ['harina', 'levadura', 'tomate triturado', 'mozzarella']),
+  d('polenta-tuco', 'Polenta con tuco', '🌽', 20, 3, 3, ['polenta'], ['polenta', 'tomate triturado', 'cebolla', 'queso rallado']),
+  d('guiso-fideos', 'Guiso de fideos', '🍲', 45, 3, 4, ['pasta', 'carne'], ['fideos', 'carne', 'papa', 'zanahoria', 'tomate triturado', 'cebolla']),
+  d('pollo-horno-papas', 'Pollo al horno con papas', '🍗', 70, 4, 5, ['pollo', 'papa'], ['pollo', 'papa', 'limón', 'ajo']),
+  d('ensalada-completa', 'Ensalada completa', '🥗', 15, 5, 3, ['verdura', 'huevo'], ['lechuga', 'tomate', 'huevo', 'zanahoria', 'atún']),
+  d('revuelto-zapallitos', 'Revuelto de zapallitos', '🥒', 20, 4, 3, ['verdura', 'huevo'], ['zapallito', 'huevo', 'cebolla', 'queso rallado']),
+  d('hamburguesas', 'Hamburguesas caseras', '🍔', 30, 2, 5, ['carne', 'pan'], ['carne picada', 'pan de hamburguesa', 'lechuga', 'tomate', 'queso']),
+  d('fajitas-pollo', 'Fajitas de pollo', '🌮', 30, 3, 4, ['pollo'], ['pollo', 'tortillas', 'morrón', 'cebolla']),
+  d('merluza-ensalada', 'Merluza al horno con ensalada', '🐟', 25, 5, 3, ['pescado'], ['merluza', 'limón', 'lechuga', 'tomate']),
+  d('paella', 'Paella', '🥘', 75, 4, 5, ['arroz', 'mariscos'], ['arroz', 'pollo', 'mariscos', 'morrón', 'arvejas', 'azafrán', 'caldo']),
+  d('gazpacho', 'Gazpacho', '🍅', 15, 5, 3, ['tomate'], ['tomate', 'pepino', 'morrón', 'pan', 'ajo', 'vinagre']),
+  d('garbanzos-espinaca', 'Garbanzos con espinaca', '🫘', 30, 5, 3, ['legumbres'], ['garbanzos', 'espinaca', 'ajo', 'pimentón']),
+  d('tostado', 'Tostado de jamón y queso', '🥪', 10, 2, 3, ['pan', 'queso'], ['pan', 'jamón', 'queso']),
+  d('omelette', 'Omelette de queso', '🍳', 10, 3, 3, ['huevo', 'queso'], ['huevo', 'queso', 'manteca']),
+  d('wok-verduras', 'Wok de verduras con arroz', '🥦', 25, 5, 3, ['arroz', 'verdura'], ['arroz', 'brócoli', 'zanahoria', 'morrón', 'salsa de soja']),
+  d('asado', 'Asado', '🔥', 180, 2, 5, ['carne'], ['asado', 'chorizo', 'carbón', 'pan', 'lechuga', 'tomate']),
+  d('cerdo-batatas', 'Bondiola de cerdo con batatas', '🐖', 60, 3, 4, ['cerdo'], ['bondiola de cerdo', 'batata', 'ajo']),
+  d('zapallitos-rellenos', 'Zapallitos rellenos', '🫑', 60, 4, 4, ['verdura', 'carne'], ['zapallito', 'carne picada', 'cebolla', 'queso']),
+];

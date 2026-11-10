@@ -1,0 +1,11 @@
+{
+  "name": "que-comemos-hoy",
+  "version": "1.0.0",
+  "description": "Una app para no tener que decidir qué comer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "python -m http.server 8000"
+  }
+}
