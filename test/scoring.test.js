@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { STARTER_DISHES } from '../js/dishes.js';
 import {
   ACTIONS,
+  FLOOR,
   LIKING,
   TEMPERATURE,
   afterMealDue,
@@ -51,23 +52,88 @@ test('not tonight fades: a left swipe costs a lot today and almost nothing after
   assert.ok(normal - fourDaysLater > 0, 'still a trace of it');
 });
 
-test('no bans: at the lowest liking and lowest variety a dish can still come up', () => {
-  const disliked = { ...dish('milanesas-berenjena'), liking: LIKING.min };
-  const dishes = STARTER_DISHES.map((d) => (d.id === disliked.id ? disliked : d));
-  const table = probabilities(dishes, ctx([], { dishes }), 'low');
-  const row = table.find((r) => r.dish.id === disliked.id);
+// The dish everyone tolerates but nobody asks for, at the lowest liking.
+const DISLIKED = 'milanesas-berenjena';
+const withDisliked = () => STARTER_DISHES.map((d) => (d.id === DISLIKED ? { ...d, liking: LIKING.min } : d));
+const pOf = (table, id) => table.find((r) => r.dish.id === id).p;
 
-  assert.ok(row, 'the dish is still a candidate');
-  assert.ok(row.p > 0, 'its probability is above 0');
-  assert.ok(row.p < 1 / dishes.length, 'but lower than an even share');
+test('no bans: at the lowest liking and lowest variety a dish keeps an eighth of a fair share', () => {
+  const dishes = withDisliked();
+  const floor = FLOOR.fairShareFraction / dishes.length;
+  assert.equal(FLOOR.fairShareFraction, 1 / 8);
 
-  // And it really does get picked now and then.
+  for (const variety of Object.keys(TEMPERATURE)) {
+    const p = pOf(probabilities(dishes, ctx([], { dishes }), variety), DISLIKED);
+    assert.ok(p >= floor, `${variety}: p = 1 in ${Math.round(1 / p)}, floor is 1 in ${Math.round(1 / floor)}`);
+    assert.ok(p < 1 / dishes.length, `${variety}: still below a fair share`);
+  }
+
+  // The floor holds however bad the score gets, as long as there is no recent left swipe.
+  const oldSwipes = Array.from({ length: 300 }, () => event(DISLIKED, ACTIONS.REJECT, FLOOR.swipeWindowDays + 0.5));
+  const eatenToday = [event(DISLIKED, ACTIONS.COOK, 0), event(DISLIKED, ACTIONS.COOK, 0)];
+  const allMissing = { dishes, isMissing: () => true };
+  for (const [name, c] of Object.entries({
+    oldSwipes: ctx(oldSwipes, { dishes }),
+    eatenToday: ctx(eatenToday, { dishes }),
+    allMissing: ctx([], allMissing),
+  })) {
+    for (const row of probabilities(dishes, c, 'low')) assert.ok(row.p >= floor, `${name}: ${row.dish.id} keeps the floor`);
+  }
+
+  // And the sampler delivers it: about 20000 / 256 = 78 picks expected from the floor alone.
   const rng = seededRng(1);
   let hits = 0;
   for (let i = 0; i < 20000; i++) {
-    if (pickDish(dishes, ctx([], { dishes }), 'low', { rng }).id === disliked.id) hits++;
+    if (pickDish(dishes, ctx([], { dishes }), 'low', { rng }).id === DISLIKED) hits++;
   }
-  assert.ok(hits > 0, `picked ${hits} times in 20000`);
+  assert.ok(hits >= 50, `picked ${hits} times in 20000`);
+});
+
+test('no bans: a dish swiped left in the last 4 days gets no floor, then gets it back', () => {
+  const dishes = withDisliked();
+  const floor = FLOOR.fairShareFraction / dishes.length;
+  const at = (daysAgo) => {
+    const table = probabilities(dishes, ctx([event(DISLIKED, ACTIONS.REJECT, daysAgo)], { dishes }), 'low');
+    return table.find((r) => r.dish.id === DISLIKED);
+  };
+
+  const yesterday = at(1);
+  assert.equal(yesterday.floored, false);
+  assert.ok(yesterday.p < floor, `swiped yesterday: 1 in ${Math.round(1 / yesterday.p)}, below the floor`);
+  assert.ok(yesterday.p > 0, 'but still not impossible');
+  assert.ok(at(FLOOR.swipeWindowDays - 0.1).p < floor, 'no floor just inside the window');
+  assert.ok(at(FLOOR.swipeWindowDays + 0.1).p >= floor, 'the floor is back just after it');
+
+  // Other actions do not remove the floor: only a left swipe does.
+  for (const action of [ACTIONS.MISSING_REJECT, ACTIONS.COOK, ACTIONS.COOK_ANYWAY, ACTIONS.PICK]) {
+    const table = probabilities(dishes, ctx([event(DISLIKED, action, 0)], { dishes }), 'low');
+    assert.ok(pOf(table, DISLIKED) >= floor, `${action} keeps the floor`);
+  }
+  // Everyone else keeps theirs while one dish is swiped.
+  const table = probabilities(dishes, ctx([event(DISLIKED, ACTIONS.REJECT, 0)], { dishes }), 'low');
+  for (const row of table) if (row.dish.id !== DISLIKED) assert.ok(row.p >= floor);
+  assert.ok(Math.abs(table.reduce((a, r) => a + r.p, 0) - 1) < 1e-9, 'probabilities still sum to 1');
+});
+
+test('the floor is small: liking still decides how often a dish comes up', () => {
+  const dishes = withDisliked();
+  const neutral = pOf(probabilities(STARTER_DISHES, ctx(), 'low'), DISLIKED);
+  const disliked = pOf(probabilities(dishes, ctx([], { dishes }), 'low'), DISLIKED);
+  assert.ok(disliked < neutral / 2, 'the lowest liking makes it much rarer than neutral');
+});
+
+test('list pick: gives the biggest boost of any action, and counts as eaten', () => {
+  const pick = applyLiking(0, ACTIONS.PICK);
+  assert.ok(pick > applyLiking(0, ACTIONS.COOK_ANYWAY), 'more than "cook anyway"');
+  assert.ok(pick > applyLiking(0, ACTIONS.COOK), 'more than "cook this"');
+
+  const d = dish('fideos-huevo');
+  const picked = scoreDish(d, ctx([event(d.id, ACTIONS.PICK, 1)]));
+  const cooked = scoreDish(d, ctx([event(d.id, ACTIONS.COOK, 1)]));
+  assert.equal(picked, cooked, 'same repeat penalty as a cooked meal');
+  const soup = dish('sopa-pollo');
+  assert.ok(scoreDish(soup, ctx([event('pollo-curry', ACTIONS.PICK, 1)])) < scoreDish(soup, ctx()), 'and it causes ingredient fatigue');
+  assert.ok(afterMealDue([event(d.id, ACTIONS.PICK, 0.5)], STARTER_DISHES, NOW), 'and it gets the after-meal question');
 });
 
 test('no bans: liking beyond the clamp cannot push a dish further down', () => {

@@ -14,8 +14,10 @@ import {
   markInStock,
   markMissing,
   normalizeState,
+  planUndo,
+  undoCardAction,
 } from '../js/state.js';
-import { STORAGE_KEY, loadState, saveState } from '../js/storage.js';
+import { STORAGE_KEY, loadState, readBackup, saveState } from '../js/storage.js';
 
 const NOW = Date.UTC(2026, 10, 10, 20, 0, 0);
 
@@ -59,6 +61,53 @@ test('card actions: each one logs an event and moves liking as the spec table sa
     ],
   );
   assert.deepEqual(state.missing, ['curry', 'crema', 'mariscos'], 'tapped items are on the shopping list');
+});
+
+test('list pick: logged as a meal with the biggest boost; works for "never show" dishes; no other dish changes', () => {
+  const state = defaultState();
+  const hidden = state.dishes.find((d) => d.id === 'pato-naranja');
+  hidden.neverShow = true;
+  const before = JSON.stringify(state.dishes.filter((d) => d !== hidden));
+
+  const event = logCardAction(state, hidden.id, ACTIONS.PICK, [], NOW);
+  assert.equal(hidden.liking, 0.6);
+  assert.deepEqual(state.events, [{ dishId: hidden.id, action: 'pick', time: NOW, missing: [] }]);
+  assert.equal(JSON.stringify(state.dishes.filter((d) => d !== hidden)), before, 'the card that was showing is not penalised');
+  assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))).events, [event], 'pick events survive save and load');
+});
+
+test('undo: reverts only what that action changed, keeping pantry changes made since', () => {
+  const state = defaultState();
+  markMissing(state, ['pan', 'curry']); // already on the list before the meal
+
+  const plan = planUndo(state, 'pollo-curry', ['curry', 'crema', 'arroz']);
+  const event = logCardAction(state, 'pollo-curry', ACTIONS.COOK_ANYWAY, ['curry', 'crema', 'arroz'], NOW);
+  assert.deepEqual(state.missing, ['pan', 'curry', 'crema', 'arroz']);
+
+  // Meanwhile, in the pantry: pan and arroz get bought, huevo runs out.
+  markInStock(state, ['pan', 'arroz']);
+  markMissing(state, ['huevo']);
+
+  undoCardAction(state, event, plan);
+  assert.deepEqual(state.events, []);
+  assert.equal(state.dishes.find((d) => d.id === 'pollo-curry').liking, 0);
+  assert.deepEqual(state.missing, ['curry', 'huevo'], 'crema (added by the meal) is gone; curry was there before; pan stays bought');
+  assert.ok(state.inStock.includes('pan') && state.inStock.includes('arroz'), 'what was bought stays bought');
+});
+
+test('undo in manual pantry mode: puts back what the action took out of stock', () => {
+  const state = defaultState();
+  state.settings.pantryMode = 'manual';
+  markInStock(state, ['curry', 'crema']);
+
+  const plan = planUndo(state, 'pollo-curry', ['curry']);
+  const event = logCardAction(state, 'pollo-curry', ACTIONS.COOK_ANYWAY, ['curry'], NOW);
+  assert.equal(isMissing(state, 'curry'), true);
+
+  undoCardAction(state, event, plan);
+  assert.equal(isMissing(state, 'curry'), false);
+  assert.deepEqual(state.missing, []);
+  assert.deepEqual([...state.inStock].sort(), ['crema', 'curry']);
 });
 
 test('liking is clamped to [-2, 2] however often an action repeats', () => {
@@ -199,5 +248,19 @@ test('storage: the app stays usable when storage throws or holds garbage', () =>
   const garbled = loadState(storage);
   assert.equal(garbled.problem, 'unreadable');
   assert.ok(garbled.state.dishes.length > 0);
-  assert.equal(storage.data.get('qch:v1:unreadable'), '{not json', 'the unreadable blob is kept, not destroyed');
+  assert.equal(garbled.raw, '{not json', 'the caller gets the text to offer as a download');
+  assert.equal(readBackup(storage), '{not json', 'and it is kept, reachable later');
+  assert.equal(readBackup(fakeStorage()), null);
+  assert.equal(readBackup(brokenStorage), null);
+});
+
+test('storage: data from a newer app version is reported and left untouched', () => {
+  const newer = JSON.stringify({ schemaVersion: SCHEMA_VERSION + 1, dishes: [], somethingNew: true });
+  const storage = fakeStorage({ [STORAGE_KEY]: newer });
+  const loaded = loadState(storage);
+
+  assert.equal(loaded.problem, 'newer', 'so the app knows not to save over it');
+  assert.ok(loaded.state.dishes.length > 0, 'the app still has something to show');
+  assert.equal(storage.data.get(STORAGE_KEY), newer);
+  assert.equal(readBackup(storage), null, 'nothing was lost, so nothing to back up');
 });

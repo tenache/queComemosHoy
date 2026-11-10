@@ -176,7 +176,7 @@ button {
 }
 
 .btn.small {
-  min-height: 36px;
+  min-height: 44px;
   padding: 6px 12px;
   border-radius: 10px;
   font-size: 0.9rem;
@@ -188,13 +188,14 @@ button {
 
 .segmented {
   display: inline-flex;
+  align-self: flex-start;
   padding: 3px;
   border-radius: 12px;
   background: var(--chip);
 }
 
 .segmented button {
-  min-height: 34px;
+  min-height: 44px;
   min-width: 44px;
   padding: 4px 12px;
   border: 0;
@@ -220,7 +221,7 @@ button {
 }
 
 .chip {
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 14px;
   border: 1.5px solid transparent;
   border-radius: 999px;
@@ -235,7 +236,7 @@ button {
 }
 
 .chip.small {
-  min-height: 34px;
+  min-height: 44px;
   padding: 4px 12px;
   font-size: 0.85rem;
 }
@@ -683,6 +684,12 @@ input[type='number'] {
 
 .sheet h2 {
   font-size: 1.3rem;
+}
+
+.sheet-foot {
+  position: sticky;
+  bottom: 0;
+  flex: none;
 }
 
 .sheet-dish {

@@ -158,6 +158,35 @@ export function logCardAction(state, dishId, action, missing = [], now = Date.no
   return event;
 }
 
+/**
+ * What a card action is about to change, so undoCardAction() can revert
+ * exactly that and nothing else. Call it BEFORE logCardAction().
+ */
+export function planUndo(state, dishId, missing = []) {
+  const names = cleanNames(missing);
+  return {
+    dishId,
+    liking: state.dishes.find((d) => d.id === dishId)?.liking ?? 0,
+    added: names.filter((n) => !state.missing.includes(n)), // newly put on the shopping list
+    unstocked: names.filter((n) => state.inStock.includes(n)), // taken out of the manual pantry
+  };
+}
+
+/**
+ * Reverts one card action: drops its event, restores the dish's liking, and
+ * undoes only this event's own shopping-list and pantry changes. Anything
+ * the user changed in the pantry since then stays as it is.
+ */
+export function undoCardAction(state, event, plan) {
+  state.events = state.events.filter((e) => e !== event);
+  const dish = state.dishes.find((d) => d.id === plan.dishId);
+  if (dish) dish.liking = plan.liking;
+  state.missing = state.missing.filter((n) => !plan.added.includes(n));
+  for (const n of plan.unstocked) {
+    if (!state.inStock.includes(n)) state.inStock.push(n);
+  }
+}
+
 /** Records the after-meal answer (or a skip, with no verdict and nothing missing). */
 export function logAfterMeal(state, mealEvent, { missing = [], verdict = null } = {}, now = Date.now()) {
   const dish = state.dishes.find((d) => d.id === mealEvent.dishId);

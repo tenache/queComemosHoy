@@ -1,10 +1,12 @@
 // Service worker: caches the app shell so the app opens offline.
 //
-// RELEASES: bump VERSION whenever any file in SHELL changes. A changed sw.js
-// is what makes browsers install the new version; the page then shows
-// "Hay una versión nueva" and the user reloads into it.
+// RELEASES: VERSION ends with a hash of the files in SHELL. After changing
+// any of them, run `node tools/sw-version.js --write` (`node --test` fails
+// until you do). A changed sw.js is what makes browsers install the new
+// version; the page then shows "Hay una versión nueva" and the user reloads
+// into it.
 
-const VERSION = 'v1';
+const VERSION = 'v1-f1eab410';
 const CACHE = `qch-shell-${VERSION}`;
 const SHELL = [
   './',

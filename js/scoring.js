@@ -20,12 +20,17 @@ export const LIKING = {
   min: -2,
   max: 2,
   cook: 0.2,
-  cookAnyway: 0.5, // strongest positive signal
+  cookAnyway: 0.5,
+  pick: 0.6, // chosen from the whole list: the strongest positive signal
   missingReject: -0.08, // light: about 1/3 of a left swipe
   reject: -0.25,
 };
 
 export const YUM = { min: 1, max: 5, step: 0.25 };
+
+// Every dish that can appear keeps a minimum chance: this fraction of a fair
+// share (1/N). A dish swiped left in the last `swipeWindowDays` gets no minimum.
+export const FLOOR = { fairShareFraction: 1 / 8, swipeWindowDays: 4 };
 
 // Softmax temperature per "variety" setting.
 export const TEMPERATURE = { low: 0.7, medium: 1.0, high: 1.5 };
@@ -37,6 +42,7 @@ export const AFTER_MEAL = { delayMinutes: 60, maxAgeHours: 48 };
 export const ACTIONS = {
   COOK: 'cook',
   COOK_ANYWAY: 'cookAnyway',
+  PICK: 'pick', // picked from the whole list; counts as cooked
   MISSING_REJECT: 'missingReject',
   REJECT: 'reject',
   AFTER_MEAL: 'afterMeal',
@@ -53,7 +59,7 @@ export function normalizeName(name) {
 }
 
 export function isEaten(event) {
-  return event.action === ACTIONS.COOK || event.action === ACTIONS.COOK_ANYWAY;
+  return event.action === ACTIONS.COOK || event.action === ACTIONS.COOK_ANYWAY || event.action === ACTIONS.PICK;
 }
 
 // Days from `time` to `now`. Events dated in the future (clock changes) count as "now".
@@ -121,9 +127,24 @@ export function scoreDish(dish, ctx) {
   return score;
 }
 
+/** Ids of the dishes swiped left within FLOOR.swipeWindowDays. */
+function recentlySwiped(events, now) {
+  const ids = new Set();
+  for (const event of events) {
+    if (event.action === ACTIONS.REJECT && daysSince(event.time, now) <= FLOOR.swipeWindowDays) ids.add(event.dishId);
+  }
+  return ids;
+}
+
 /**
- * Softmax probabilities over the dishes that may be shown.
- * Returns [{dish, score, p}]. "Never show" dishes and ids in `exclude` are left out.
+ * Probabilities over the dishes that may be shown: a softmax of the scores,
+ * mixed with an even share so no dish is banned in practice.
+ *
+ *   p = (1 - ε) · softmax + ε · uniform(E),   ε = |E| · fraction / N
+ *
+ * N is the number of candidates and E the ones with no recent left swipe, so
+ * every dish in E gets at least fraction / N (an eighth of a fair share).
+ * Returns [{dish, score, p, floored}]. "Never show" dishes and ids in `exclude` are left out.
  */
 export function probabilities(dishes, ctx, variety = 'medium', exclude = []) {
   const T = TEMPERATURE[variety] ?? TEMPERATURE.medium;
@@ -136,10 +157,20 @@ export function probabilities(dishes, ctx, variety = 'medium', exclude = []) {
   const top = Math.max(...scores); // subtract the max so exp() can't overflow
   const weights = scores.map((s) => Math.exp((s - top) / T));
   const total = weights.reduce((a, b) => a + b, 0);
-  return candidates.map((dish, i) => ({ dish, score: scores[i], p: weights[i] / total }));
+
+  const swiped = recentlySwiped(fullCtx.events ?? [], fullCtx.now);
+  const floor = FLOOR.fairShareFraction / candidates.length;
+  const floored = candidates.map((d) => !swiped.has(d.id));
+  const epsilon = floor * floored.filter(Boolean).length;
+  return candidates.map((dish, i) => ({
+    dish,
+    score: scores[i],
+    p: ((1 - epsilon) * weights[i]) / total + (floored[i] ? floor : 0),
+    floored: floored[i],
+  }));
 }
 
-/** Samples one dish with p ∝ exp(score / T). The only source of randomness. */
+/** Samples one dish from probabilities(). The only source of randomness. */
 export function pickDish(dishes, ctx, variety = 'medium', { rng = Math.random, exclude = [] } = {}) {
   const table = probabilities(dishes, ctx, variety, exclude);
   if (table.length === 0) return null;

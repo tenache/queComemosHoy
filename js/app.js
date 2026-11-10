@@ -14,8 +14,10 @@ import {
   markInStock,
   markMissing,
   normalizeState,
+  planUndo,
+  undoCardAction,
 } from './state.js';
-import { loadState, saveState } from './storage.js';
+import { STORAGE_KEY, loadState, readBackup, saveState } from './storage.js';
 import { lang, t } from './strings.js';
 
 const SWIPE_THRESHOLD = 80; // px
@@ -29,9 +31,11 @@ const ui = {
   currentId: null, // dish on the suggestion card
   cooked: null, // {dishId, event, undo} while the "¡A cocinar!" panel shows
   sheet: null, // {dishId, selected:Set} while the 🛒 sheet is open
+  picking: false, // while the "pick from the whole list" sheet is open
+  readOnly: false, // stored data is from a newer app version: never save over it
   afterMeal: null, // {event, dishId, selected:Set, verdict} while the question shows
   editing: null, // {id} (id null = new dish) while the dish form shows
-  banners: [], // [{id, text, action?, actionLabel?}]
+  banners: [], // [{id, text, actionLabel?, action?, sticky?}]
   saveWarned: false,
   installPrompt: null,
 };
@@ -109,6 +113,7 @@ const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce
 // ---- State plumbing -----------------------------------------------------
 
 function commit() {
+  if (ui.readOnly) return render();
   if (!saveState(state) && !ui.saveWarned) {
     ui.saveWarned = true;
     addBanner('save', t('storageSaveFailed'));
@@ -116,10 +121,35 @@ function commit() {
   render();
 }
 
-function addBanner(id, text, actionLabel, action) {
+function addBanner(id, text, { actionLabel, action, sticky = false } = {}) {
   ui.banners = ui.banners.filter((b) => b.id !== id);
-  ui.banners.push({ id, text, actionLabel, action });
+  ui.banners.push({ id, text, actionLabel, action, sticky });
   renderBanners();
+}
+
+function downloadText(text, filename) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const link = h('a', { href: url, download: filename });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+const downloadBackup = (text) => downloadText(text, `que-comemos-hoy-ilegible-${today()}.txt`);
+
+/** Tells the user about a problem found by loadState(). */
+function reportLoadProblem({ problem, raw }) {
+  ui.readOnly = problem === 'newer';
+  if (problem === 'unavailable') {
+    ui.saveWarned = true;
+    addBanner('storage', t('storageUnavailable'));
+  } else if (problem === 'unreadable') {
+    addBanner('storage', t('storageUnreadable'), { actionLabel: t('downloadCopy'), action: () => downloadBackup(raw) });
+  } else if (problem === 'newer') {
+    addBanner('storage', t('storageNewer'), { actionLabel: t('reload'), action: () => window.location.reload(), sticky: true });
+  }
 }
 
 const dishById = (id) => state.dishes.find((d) => d.id === id);
@@ -150,7 +180,7 @@ function ensureCurrent() {
 }
 
 function checkAfterMeal() {
-  if (ui.afterMeal || ui.sheet) return;
+  if (ui.afterMeal || ui.sheet || ui.picking) return;
   const due = afterMealDue(state.events, state.dishes, Date.now());
   if (!due) return;
   ui.afterMeal = { event: due.event, dishId: due.dish.id, selected: new Set(), verdict: null };
@@ -159,17 +189,15 @@ function checkAfterMeal() {
 
 // ---- Card actions -------------------------------------------------------
 
-function snapshotForUndo(dish) {
-  return { liking: dish.liking, missing: [...state.missing], inStock: [...state.inStock] };
-}
-
-function cook(action, missing = []) {
-  const dish = dishById(ui.currentId);
+/** Logs a meal: the card's dish, or any dish picked from the whole list. */
+function cook(action, missing = [], dishId = ui.currentId) {
+  const dish = dishById(dishId);
   if (!dish) return;
-  const undo = snapshotForUndo(dish);
+  const undo = planUndo(state, dish.id, missing);
   const event = logCardAction(state, dish.id, action, missing);
   ui.cooked = { dishId: dish.id, event, undo };
   ui.sheet = null;
+  ui.picking = false;
   commit();
 }
 
@@ -183,14 +211,9 @@ function reject(action, missing = []) {
 }
 
 function undoCook() {
-  const { dishId, event, undo } = ui.cooked;
-  const dish = dishById(dishId);
-  state.events = state.events.filter((e) => e !== event);
-  if (dish) dish.liking = undo.liking;
-  state.missing = undo.missing;
-  state.inStock = undo.inStock;
-  ui.cooked = null;
-  ui.currentId = dishId;
+  const { event, undo } = ui.cooked;
+  undoCardAction(state, event, undo);
+  ui.cooked = null; // back to the card that was showing
   commit();
 }
 
@@ -309,6 +332,7 @@ function viewToday() {
         h('h2', null, t('noDishesTitle')),
         h('p', null, t('noDishesText')),
         button(t('goToDishes'), () => switchTab('dishes'), 'primary'),
+        state.dishes.length > 0 && button(`📖 ${t('pickFromList')}`, openPicker),
       ),
     ];
   }
@@ -352,6 +376,7 @@ function viewToday() {
       h('button', { type: 'button', class: 'action cart', onclick: openMissingSheet }, h('span', { 'aria-hidden': 'true' }, '🛒'), t('actionMissing')),
       h('button', { type: 'button', class: 'action yes', onclick: swipeRight }, h('span', { 'aria-hidden': 'true' }, '👉'), t('actionCook')),
     ),
+    button(`📖 ${t('pickFromList')}`, openPicker, 'wide'),
     h('p', { class: 'hint' }, t('swipeHint')),
   ];
 }
@@ -525,7 +550,9 @@ function viewDishForm() {
       liking: original?.liking ?? 0,
       neverShow: neverShow.checked,
     });
-    if (original) state.dishes[state.dishes.indexOf(original)] = saved;
+    // Look the dish up again by id: the state may have been reloaded while the form was open.
+    const index = state.dishes.findIndex((d) => d.id === saved.id);
+    if (index >= 0) state.dishes[index] = { ...saved, liking: state.dishes[index].liking };
     else state.dishes.push(saved);
     ui.editing = null;
     commit();
@@ -533,7 +560,7 @@ function viewDishForm() {
 
   const remove = () => {
     if (!window.confirm(t('confirmDelete', { name: original.name }))) return;
-    state.dishes = state.dishes.filter((d) => d !== original);
+    state.dishes = state.dishes.filter((d) => d.id !== original.id);
     if (ui.currentId === original.id) ui.currentId = null;
     if (ui.cooked?.dishId === original.id) ui.cooked = null;
     ui.editing = null;
@@ -634,13 +661,7 @@ function viewPantry() {
 }
 
 function exportData() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = h('a', { href: url, download: `que-comemos-hoy-${new Date().toISOString().slice(0, 10)}.json` });
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadText(JSON.stringify(state, null, 2), `que-comemos-hoy-${today()}.json`);
 }
 
 async function importData(file) {
@@ -653,7 +674,7 @@ async function importData(file) {
   }
   if (!window.confirm(t('confirmImport', { dishes: state.dishes.length }))) return;
   state = next;
-  Object.assign(ui, { currentId: null, cooked: null, sheet: null, afterMeal: null, editing: null });
+  Object.assign(ui, { currentId: null, cooked: null, sheet: null, picking: false, afterMeal: null, editing: null });
   commit();
   window.alert(t('importOk'));
 }
@@ -684,6 +705,8 @@ function viewSettings() {
       h('span', null, h('strong', null, label), h('span', { class: 'help' }, help)),
     );
 
+  const backup = readBackup();
+
   return [
     h('header', { class: 'top' }, h('h1', null, t('settingsTitle'))),
     h('h2', { class: 'section' }, t('pantryMode')),
@@ -696,6 +719,11 @@ function viewSettings() {
     h('p', { class: 'help' }, t('backupHelp')),
     h('div', { class: 'row' }, button(t('exportData'), exportData), button(t('importData'), () => fileInput.click())),
     fileInput,
+    backup != null && [
+      h('h2', { class: 'section' }, t('unreadableTitle')),
+      h('p', { class: 'help' }, t('unreadableHelp')),
+      button(t('downloadCopy'), () => downloadBackup(backup)),
+    ],
     ui.installPrompt && [
       h('h2', { class: 'section' }, t('install')),
       h('p', { class: 'help' }, t('installHelp')),
@@ -744,6 +772,49 @@ function overlayMissing() {
         },
         'ghost',
       ),
+    ),
+  );
+}
+
+function openPicker() {
+  ui.picking = true;
+  render();
+}
+
+/** The whole dish list, "never show" ones included. Tapping one logs it as tonight's meal. */
+function overlayPicker() {
+  return sheet(
+    `📖 ${t('pickTitle')}`,
+    h('p', { class: 'help' }, t('pickHelp')),
+    h(
+      'ul',
+      { class: 'list' },
+      state.dishes.map((dish) =>
+        h(
+          'li',
+          null,
+          h(
+            'button',
+            { type: 'button', class: 'list-row', onclick: () => cook(ACTIONS.PICK, [], dish.id) },
+            h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
+            h(
+              'span',
+              { class: 'list-text' },
+              h('span', { class: 'list-name' }, dish.name),
+              h('span', { class: 'list-meta' }, `⏱ ${t('minutes', { n: dish.cookMinutes })}`),
+            ),
+            dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
+          ),
+        ),
+      ),
+    ),
+    button(
+      t('cancel'),
+      () => {
+        ui.picking = false;
+        render();
+      },
+      'sheet-foot',
     ),
   );
 }
@@ -813,12 +884,12 @@ function renderBanners() {
         'div',
         { class: 'banner', role: 'status' },
         h('span', null, b.text),
-        b.action
-          ? button(b.actionLabel, b.action, 'small primary')
-          : button('✕', () => {
-              ui.banners = ui.banners.filter((x) => x !== b);
-              renderBanners();
-            }, 'small ghost', { 'aria-label': t('close') }),
+        b.action && button(b.actionLabel, b.action, 'small primary'),
+        !b.sticky &&
+          button('✕', () => {
+            ui.banners = ui.banners.filter((x) => x !== b);
+            renderBanners();
+          }, 'small ghost', { 'aria-label': t('close') }),
       ),
     ),
   );
@@ -845,7 +916,7 @@ function render() {
     ),
   );
 
-  const overlay = ui.afterMeal ? overlayAfterMeal() : ui.sheet ? overlayMissing() : null;
+  const overlay = ui.afterMeal ? overlayAfterMeal() : ui.sheet ? overlayMissing() : ui.picking ? overlayPicker() : null;
   $('overlay').replaceChildren(...(overlay ? [overlay] : []));
   document.body.classList.toggle('has-overlay', Boolean(overlay));
 }
@@ -855,9 +926,11 @@ function render() {
 function watchServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   const offerUpdate = (registration) => {
-    addBanner('update', t('updateAvailable'), t('reload'), () => {
+    addBanner('update', t('updateAvailable'), {
+      actionLabel: t('reload'),
       // The waiting worker takes over, `controllerchange` fires, and the page reloads.
-      registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
+      action: () => registration.waiting?.postMessage({ type: 'SKIP_WAITING' }),
+      sticky: true,
     });
   };
 
@@ -865,6 +938,8 @@ function watchServiceWorker() {
     .register('./sw.js')
     .then((registration) => {
       if (registration.waiting && navigator.serviceWorker.controller) offerUpdate(registration);
+      // Stored data from a newer version means this copy is stale: go and get the update.
+      if (ui.readOnly) registration.update().catch(() => {});
       registration.addEventListener('updatefound', () => {
         const worker = registration.installing;
         worker?.addEventListener('statechange', () => {
@@ -900,12 +975,21 @@ function watchServiceWorker() {
 document.documentElement.lang = lang;
 document.title = t('appName');
 
-if (loaded.problem === 'unavailable') {
-  ui.saveWarned = true;
-  addBanner('storage', t('storageUnavailable'));
-} else if (loaded.problem === 'unreadable') {
-  addBanner('storage', t('storageUnreadable'));
-}
+reportLoadProblem(loaded);
+
+// Another copy of the app (a second tab, or the installed app next to a tab)
+// saved: take its state, so this copy's next save can't drop its events.
+window.addEventListener('storage', (e) => {
+  if (e.key !== STORAGE_KEY && e.key !== null) return;
+  const reloaded = loadState();
+  state = reloaded.state;
+  reportLoadProblem(reloaded);
+  // These hold objects from the old state. An open dish form keeps what was typed.
+  ui.cooked = null;
+  ui.afterMeal = null;
+  checkAfterMeal();
+  if (!ui.editing) render();
+});
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -921,13 +1005,13 @@ document.addEventListener('visibilitychange', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (ui.tab !== 'today' || ui.cooked || ui.sheet || ui.afterMeal) {
-    if (e.key === 'Escape' && ui.sheet) {
-      ui.sheet = null;
-      render();
-    }
+  if (e.key === 'Escape' && !ui.afterMeal && (ui.sheet || ui.picking)) {
+    ui.sheet = null;
+    ui.picking = false;
+    render();
     return;
   }
+  if (ui.tab !== 'today' || ui.cooked || ui.sheet || ui.picking || ui.afterMeal) return;
   if (e.target.closest?.('input, textarea, select')) return;
   if (e.key === 'ArrowRight') swipeRight();
   else if (e.key === 'ArrowLeft') swipeLeft();
