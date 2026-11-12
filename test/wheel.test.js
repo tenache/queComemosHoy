@@ -55,6 +55,24 @@ test('the four corners are exact', () => {
   assert.equal(cookShare(daily(FRIDAY), FRIDAY), 7 / 8, 'Friday, delivery every day for 30 days');
 });
 
+test('the slice grows gradually: one delivery today gives about 35% on a weekday', () => {
+  const one = cookShare(daysAgo(MONDAY, 0), MONDAY);
+  assert.ok(Math.abs(one - 0.35) < 0.01, `one delivery today: ${(one * 100).toFixed(1)}%`);
+
+  // A first delivery moves the slice by a fraction of its range, not most of it.
+  const range = WHEEL.weekday.max - WHEEL.weekday.min;
+  assert.ok(one - WHEEL.weekday.min < range / 4);
+  // Each further delivery (one a day, most recent today) adds a bit more, with no big jump.
+  let previous = cookShare([], MONDAY);
+  for (let n = 1; n <= 30; n++) {
+    const share = cookShare(daysAgo(MONDAY, ...Array.from({ length: n }, (_, i) => i)), MONDAY);
+    assert.ok(share > previous, `${n} deliveries > ${n - 1}`);
+    assert.ok(share - previous < range / 4, `step to ${n} deliveries is ${share - previous}`);
+    previous = share;
+  }
+  assert.equal(previous, 15 / 16);
+});
+
 test('the slice is never outside [1/8, 15/16]', () => {
   const rng = seededRng(3);
   const histories = [[], daily(MONDAY)];

@@ -8,9 +8,12 @@ export const WHEEL = {
   weekend: { min: 1 / 8, max: 7 / 8 }, // Friday to Sunday
   weekendDays: [5, 6, 0], // Date.getDay(): Friday, Saturday, Sunday
 
-  // pressure = recencyWeight · recency + frequencyWeight · frequency
-  recencyWeight: 0.5,
-  frequencyWeight: 0.5,
+  // pressure = (recencyWeight · recency + frequencyWeight · frequency) ^ pressureExponent
+  // Frequency counts for more than recency, and the exponent (above 1) keeps
+  // the slice small after one or two deliveries, so it grows gradually.
+  recencyWeight: 0.25,
+  frequencyWeight: 0.75,
+  pressureExponent: 1.5,
   recencyGraceDays: 1, // a delivery up to this long ago counts as "just now"
   recencyFadeDays: 7, // after that, recency = exp(-days / this)
   windowDays: 30, // frequency = deliveries in this window / windowDays
@@ -47,7 +50,7 @@ export function wheelStats(deliveries, now) {
 
   const recency = last === null ? 0 : Math.exp(-Math.max(last - WHEEL.recencyGraceDays, 0) / WHEEL.recencyFadeDays);
   const frequency = Math.min(count, WHEEL.windowDays) / WHEEL.windowDays;
-  const pressure = WHEEL.recencyWeight * recency + WHEEL.frequencyWeight * frequency;
+  const pressure = (WHEEL.recencyWeight * recency + WHEEL.frequencyWeight * frequency) ** WHEEL.pressureExponent;
   const weekend = WHEEL.weekendDays.includes(new Date(now).getDay());
   const { min, max } = weekend ? WHEEL.weekend : WHEEL.weekday;
 
