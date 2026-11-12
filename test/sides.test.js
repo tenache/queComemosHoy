@@ -243,6 +243,26 @@ test('migration v2 → v3: an edited starter dish is left as the user made it', 
   assert.deepEqual(byId(state.dishes, 'hamburguesas').sides, []);
 });
 
+test('migration v2 → v3: a user dish with a new starter\'s name is reused, not duplicated', () => {
+  const blob = v2Blob();
+  blob.dishes.push(
+    { id: 'd-mine1', name: 'Salchichas', emoji: '🌭', ingredients: ['salchichas', 'pan'], mains: ['salchicha'], cookMinutes: 10, health: 2, yum: 5 },
+    { id: 'd-mine2', name: 'puré de papas ', emoji: '🥔', ingredients: ['papa', 'leche'], mains: ['papa'], cookMinutes: 20, health: 3, yum: 5 },
+  );
+  const before = JSON.stringify(blob);
+  const state = normalizeState(blob);
+  assert.equal(JSON.stringify(blob), before, 'the input is not changed');
+
+  const names = state.dishes.map((d) => d.name.trim().toLowerCase());
+  assert.equal(names.filter((n) => n === 'salchichas').length, 1);
+  assert.equal(names.filter((n) => n === 'puré de papas').length, 1);
+  assert.equal(byId(state.dishes, 'salchichas'), undefined);
+  assert.equal(byId(state.dishes, 'pure'), undefined);
+  assert.equal(byId(state.dishes, 'milanesas-pure').sides[0], 'd-mine2', 'milanesas go with their puré');
+  assert.equal(state.events[0].sideId, 'd-mine2', 'the old milanesas con puré meal had their puré');
+  assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))), state, 'a second pass changes nothing');
+});
+
 test('migration v2 → v3: a deleted starter is not brought back, and a dish already there is not duplicated', () => {
   const blob = v2Blob();
   blob.dishes = blob.dishes.filter((d) => d.id !== 'ravioles-tuco');

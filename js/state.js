@@ -132,8 +132,19 @@ function migrateToV3(blob) {
       ? { ...e, sideId: SPLIT_IN_V3[e.dishId].sideId }
       : e,
   );
+  // A new starter the user already has under its name (their own "Salchichas")
+  // isn't added twice: the starters' sides and old meals point at theirs instead.
   const have = new Set(blob.dishes.map((d) => String(d?.id)));
-  for (const id of NEW_IN_V3) if (!have.has(id)) blob.dishes.push(copyStarter(starters.get(id)));
+  const mine = new Map(blob.dishes.filter((d) => d && typeof d === 'object').map((d) => [normalizeName(d.name), String(d.id)]));
+  const alias = new Map();
+  for (const id of NEW_IN_V3) {
+    if (have.has(id)) continue;
+    const theirs = mine.get(normalizeName(starters.get(id).name));
+    if (theirs) alias.set(id, theirs);
+    else blob.dishes.push(copyStarter(starters.get(id)));
+  }
+  for (const d of blob.dishes) if (d && Array.isArray(d.sides)) d.sides = d.sides.map((id) => alias.get(id) ?? id);
+  blob.events = blob.events.map((e) => (e && alias.has(e.sideId) ? { ...e, sideId: alias.get(e.sideId) } : e));
   blob.schemaVersion = 3;
 }
 

@@ -260,8 +260,10 @@ function changeSideForMissing(missing) {
   if (!main || !old) return;
   logCardAction(state, old, ACTIONS.MISSING_REJECT, missing);
   if (ui.pinnedSide === old) ui.pinnedSide = null;
-  const next = pickSide(main, scoringContext(), state.settings.variety, { exclude: [old] });
-  ui.sideId = next && next.id !== old ? next.id : null;
+  // Don't offer a side that needs what just ran out (papas fritas after "no hay papa").
+  const options = sidesOf(main, state.dishes);
+  const blocked = options.filter((d) => d.id === old || d.ingredients.some((i) => missing.includes(i))).map((d) => d.id);
+  ui.sideId = pickDish(options, scoringContext(), state.settings.variety, { exclude: blocked })?.id ?? null;
   ui.sideFor = main.id;
   ui.sheet = null;
   commit();
