@@ -22,7 +22,7 @@ export const FOODS = {
   patitas: { kcal: 260, protein: 14, carbs: 16, fat: 16, fiber: 1, aliases: ['patitas', 'medallones de pollo', 'nuggets'] },
   salchicha: { kcal: 270, protein: 11, carbs: 3, fat: 24, fiber: 0, aliases: ['salchicha', 'salchichas'], each: 40 },
   pato: { kcal: 250, protein: 17, carbs: 0, fat: 20, fiber: 0, aliases: ['pato'] },
-  merluza: { kcal: 75, protein: 16, carbs: 0, fat: 1, fiber: 0, aliases: ['merluza', 'filet', 'filete', 'pescado'] },
+  merluza: { kcal: 75, protein: 16, carbs: 0, fat: 1, fiber: 0, aliases: ['merluza', 'pescado'] },
   atun: { kcal: 115, protein: 26, carbs: 0, fat: 1, fiber: 0, aliases: ['atun'] },
   mariscos: { kcal: 85, protein: 16, carbs: 2, fat: 1.5, fiber: 0, aliases: ['mariscos', 'langostinos', 'calamar', 'mejillones'] },
   huevo: { kcal: 143, protein: 12.6, carbs: 0.7, fat: 9.5, fiber: 0, aliases: ['huevo'], each: 50 },
@@ -91,13 +91,22 @@ const ALIASES = Object.entries(FOODS)
   .flatMap(([key, food]) => food.aliases.map((alias) => ({ key, alias: plain(alias) })))
   .sort((a, b) => b.alias.length - a.alias.length); // longest first: "pan rallado" before "pan"
 
-/** The FOODS key a recipe line is about, or null. Whole words only, with an optional plural. */
+/**
+ * The FOODS key a recipe line is about, or null. Whole words only, with an
+ * optional plural. In Spanish the food is the first noun ("caldo de pollo",
+ * "bife de chorizo"), so the match that starts earliest in the line wins, and
+ * the longest one when two start at the same place ("pan rallado", not "pan").
+ */
 export function matchFood(text) {
   const words = ` ${plain(text)} `;
+  let best = null;
   for (const { key, alias } of ALIASES) {
-    if (words.includes(` ${alias} `) || words.includes(` ${alias}s `) || words.includes(` ${alias}es `)) return key;
+    for (const form of [alias, `${alias}s`, `${alias}es`]) {
+      const at = words.indexOf(` ${form} `);
+      if (at >= 0 && (best === null || at < best.at)) best = { key, at };
+    }
   }
-  return null;
+  return best?.key ?? null;
 }
 
 const empty = () => ({ kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 });
@@ -178,8 +187,8 @@ export function parseItem(line) {
 
   const item = { text };
   const food = matchFood(text);
-  if (food && (grams > 0 || count || !FOODS[food].minor)) item.food = food;
   if (count && !grams && FOODS[food]?.each) grams = count * FOODS[food].each;
+  if (food && (grams > 0 || !FOODS[food].minor)) item.food = food;
   if (grams > 0) item.grams = Math.round(grams);
   if (count && grams > 0) item.each = Math.round((grams / count) * 10) / 10;
   return item;

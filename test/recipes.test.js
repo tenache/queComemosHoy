@@ -113,6 +113,21 @@ test('recipe lines a person types', () => {
   assert.equal(matchFood('aceitunas'), 'aceitunas');
   assert.equal(matchFood('jamón'), 'jamon');
   assert.equal(matchFood('espárragos'), null);
+
+  // The food is the first noun: the earliest match in the line wins (hC, PR #8 round 1).
+  assert.equal(matchFood('caldo de pollo'), 'caldo');
+  assert.equal(matchFood('caldo de carne'), 'caldo');
+  assert.equal(matchFood('bife de chorizo'), 'carne magra');
+  assert.equal(matchFood('filet de pollo'), 'pollo');
+  assert.equal(matchFood('filetes de merluza'), 'merluza');
+  assert.equal(matchFood('aceite de oliva'), 'aceite');
+  assert.equal(matchFood('jugo de naranja'), 'naranja');
+  assert.equal(matchFood('harina de maíz'), 'polenta');
+
+  // A minor food with a count and no unit weight is seasoning, not a gap.
+  assert.deepEqual(parseItem('limón: 1'), { text: 'limón' });
+  assert.deepEqual(parseItem('caldo: 1'), { text: 'caldo' });
+  assert.deepEqual(parseItem('ajo: 2'), { text: 'ajo', food: 'ajo', grams: 10, each: 5 });
 });
 
 test('a starter recipe only shows while the dish is still that starter; a dish\'s own recipe wins', () => {
