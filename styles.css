@@ -445,6 +445,163 @@ button.chip[aria-pressed='true'] {
   border-radius: 24px 24px 0 0;
 }
 
+.row.more .btn {
+  padding: 10px 6px;
+  font-size: 0.88rem;
+}
+
+/* ---- Delivery wheel ---- */
+
+.wheel-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.wheel {
+  width: min(100%, 340px);
+  height: auto;
+  filter: drop-shadow(0 8px 18px rgb(80 40 10 / 0.25));
+}
+
+.wheel-rotor {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+
+.wheel-slice {
+  stroke: var(--bg);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.wheel-slice.cook {
+  fill: var(--yes);
+}
+
+.wheel-label {
+  fill: #2b2118;
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.wheel-hub {
+  fill: var(--surface);
+  stroke: var(--text);
+  stroke-width: 3;
+}
+
+.wheel-pointer {
+  fill: var(--text);
+  stroke: var(--bg);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.btn.spin {
+  min-height: 56px;
+  font-size: 1.15rem;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.wheel-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.wheel-result-text {
+  font-size: 1.2rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.wheel-size {
+  font-weight: 600;
+  text-align: center;
+}
+
+.wheel-size + .help {
+  text-align: center;
+}
+
+.fold {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.fold[inert] {
+  opacity: 0.5;
+}
+
+.fold summary {
+  min-height: 48px;
+  padding: 12px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+
+.edit-row {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.past-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+}
+
+.past-row > * {
+  min-width: 0;
+}
+
+input[type='date'],
+select {
+  width: 100%;
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font: inherit;
+  color: inherit;
+}
+
+.badge.inline {
+  margin-left: 8px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* ---- Lists ---- */
 
 .list {

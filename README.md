@@ -10,6 +10,7 @@ Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en e
 
 - **Una tarjeta por vez.** Deslizá a la derecha (👉) si la cocinás, a la izquierda (👈) si hoy no, o tocá 🛒 si te falta algún ingrediente.
 - **O elegí vos.** Con "Elegir de la lista" ves todas las comidas y anotás la que quieras.
+- **Ruleta del delivery.** Para las noches de pedir: girás y sale una cocina (china, pizza, sushi…) o "¿Y si cocinamos?". Esa porción crece cuando venís pidiendo mucho y se achica si hace rato que no pedís o es fin de semana.
 - **Aprende de lo que elegís.** Lo que cocinás sube, lo que rechazás baja, y nada desaparece salvo que marques "No mostrar nunca": hasta la comida menos querida vuelve a salir cada tanto.
 - **No repite.** Baja las comidas que comiste hace poco y las que comparten ingrediente principal con lo de ayer.
 - **Lista de compras.** Lo que marcás como faltante queda anotado hasta que toques "Comprado".
@@ -48,6 +49,8 @@ HTML, CSS y JavaScript sin framework ni build.
 | Archivo | Qué tiene |
 |---|---|
 | `js/scoring.js` | El puntaje de cada comida y el sorteo. Módulo puro, con todos los pesos como constantes al principio. |
+| `js/wheel.js` | La ruleta del delivery: el tamaño de la porción "¿Y si cocinamos?", el sorteo y el registro de pedidos. Módulo puro, con todos los números en `WHEEL`. |
+| `js/wheel-view.js` | La pantalla de la ruleta. |
 | `js/state.js` | El estado (un solo objeto JSON con `schemaVersion`), la despensa y el registro de eventos. |
 | `js/storage.js` | Lectura y escritura en `localStorage` (clave `qch:v1`). |
 | `js/strings.js` | Todos los textos de la interfaz, para poder agregar otro idioma. |

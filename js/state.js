@@ -3,8 +3,10 @@
 
 import { STARTER_DISHES } from './dishes.js';
 import { ACTIONS, LIKING, YUM, applyLiking, applyYum, clamp, normalizeName } from './scoring.js';
+import { DEFAULT_CUISINES, cleanCuisine, cleanCuisines } from './wheel.js';
 
-export const SCHEMA_VERSION = 1;
+// 1: the v1 app. 2: adds the delivery wheel (`cuisines`, `deliveries`).
+export const SCHEMA_VERSION = 2;
 export const PANTRY_MODES = ['lazy', 'manual'];
 export const VARIETIES = ['low', 'medium', 'high'];
 export const MAX_MAINS = 3;
@@ -17,6 +19,8 @@ export function defaultState() {
     missing: [], // the shopping list: ingredients marked missing
     inStock: [], // manual pantry mode: ingredients the user says they have
     settings: { pantryMode: 'lazy', variety: 'medium' },
+    cuisines: [...DEFAULT_CUISINES], // the delivery wheel's slices
+    deliveries: [], // {time, cuisine | null, manual?: true}
   };
 }
 
@@ -65,16 +69,34 @@ function cleanEvent(raw) {
   return event;
 }
 
+function cleanDelivery(raw) {
+  const delivery = { time: Number(raw.time), cuisine: cleanCuisine(raw.cuisine) || null };
+  if (raw.manual === true) delivery.manual = true;
+  return delivery;
+}
+
+/** Brings a blob from an older schema version up to SCHEMA_VERSION, one step at a time. Returns a copy. */
+function migrate(raw) {
+  const blob = { ...raw };
+  if (blob.schemaVersion === 1) {
+    // v2 adds the delivery wheel: start with the default cuisines and an empty log.
+    blob.cuisines = [...DEFAULT_CUISINES];
+    blob.deliveries = [];
+    blob.schemaVersion = 2;
+  }
+  return blob;
+}
+
 /**
  * Turns anything read from storage or an imported file into a valid state,
  * migrating older schema versions. Throws if it can't be used at all.
  */
-export function normalizeState(raw) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('not-an-object');
-  if (!Number.isInteger(raw.schemaVersion) || raw.schemaVersion < 1) throw new Error('no-schema-version');
-  if (raw.schemaVersion > SCHEMA_VERSION) throw new Error('newer-schema');
-  if (!Array.isArray(raw.dishes)) throw new Error('no-dishes');
-  // Migrations from older versions go here: if (raw.schemaVersion === 1) { …; raw.schemaVersion = 2 }
+export function normalizeState(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('not-an-object');
+  if (!Number.isInteger(input.schemaVersion) || input.schemaVersion < 1) throw new Error('no-schema-version');
+  if (input.schemaVersion > SCHEMA_VERSION) throw new Error('newer-schema');
+  if (!Array.isArray(input.dishes)) throw new Error('no-dishes');
+  const raw = migrate(input);
 
   const actions = new Set(Object.values(ACTIONS));
   const seenIds = new Set();
@@ -101,6 +123,10 @@ export function normalizeState(raw) {
       pantryMode: PANTRY_MODES.includes(settings.pantryMode) ? settings.pantryMode : 'lazy',
       variety: VARIETIES.includes(settings.variety) ? settings.variety : 'medium',
     },
+    cuisines: cleanCuisines(raw.cuisines),
+    deliveries: (Array.isArray(raw.deliveries) ? raw.deliveries : [])
+      .filter((d) => d && typeof d === 'object' && Number.isFinite(Number(d.time)))
+      .map(cleanDelivery),
   };
 }
 
