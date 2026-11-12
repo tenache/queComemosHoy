@@ -76,12 +76,13 @@ export function createWheelView(ctx) {
     const slices = buildSlices(s.cuisines, s.deliveries, Date.now());
     const index = spin(slices); // the result is decided here; the rest is for show
     const target = landingRotation(slices, index, { from: w.rotation });
-    Object.assign(w, { slices, spinning: true, result: null, ordered: null, error: null });
+    Object.assign(w, { slices, spinning: true, result: null, ordered: null, error: null, wheelEl: null });
     ctx.render();
 
     const finish = () => {
       if (ui.wheel !== w) return; // the screen was closed meanwhile
-      Object.assign(w, { rotation: target % 360, spinning: false, result: index });
+      // `slices` again: the result is read from the wheel that was spun, whatever happened to the state meanwhile.
+      Object.assign(w, { slices, rotation: target % 360, spinning: false, result: index, wheelEl: null });
       ctx.render();
     };
     if (ctx.reducedMotion()) return finish();
@@ -199,10 +200,15 @@ export function createWheelView(ctx) {
 
   // ---- Cuisines and delivery history ----
 
-  /** A <details> whose open state survives re-renders. */
+  /** A <details> whose open state survives re-renders. It can't be used while the wheel is spinning. */
   function foldable(key, title, ...children) {
     const w = ui.wheel;
-    const el = h('details', { class: 'fold', open: Boolean(w.show[key]) }, h('summary', null, title), h('div', { class: 'fold-body' }, children));
+    const el = h(
+      'details',
+      { class: 'fold', open: Boolean(w.show[key]), inert: w.spinning },
+      h('summary', null, title),
+      h('div', { class: 'fold-body' }, children),
+    );
     el.addEventListener('toggle', () => {
       w.show[key] = el.open;
     });
@@ -362,6 +368,10 @@ export function createWheelView(ctx) {
     // While spinning or showing a result, keep the wheel that was spun.
     const slices = w.slices ?? buildSlices(s.cuisines, s.deliveries, now);
     const stats = wheelStats(s.deliveries, now);
+    // A re-render during a spin (another tab saved, say) keeps the same wheel
+    // element, so the wheel is never redrawn back at its starting angle.
+    const wheelEl = w.spinning && w.wheelEl ? w.wheelEl : drawWheel(slices, w.rotation);
+    w.wheelEl = w.spinning ? wheelEl : null;
 
     return [
       h(
@@ -377,7 +387,7 @@ export function createWheelView(ctx) {
         ),
         h('h1', null, t('wheelTitle')),
       ),
-      h('div', { class: 'wheel-wrap' }, drawWheel(slices, w.rotation)),
+      h('div', { class: 'wheel-wrap' }, wheelEl),
       resultPanel(w) ?? button(w.spinning ? t('wheelSpinning') : `🎡 ${t('wheelSpin')}`, doSpin, 'primary wide spin', { disabled: w.spinning }),
       w.ordered && button(`🎡 ${t('wheelSpinAgain')}`, doSpin, 'wide'),
       explanation(stats),

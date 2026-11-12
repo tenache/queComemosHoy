@@ -11,6 +11,8 @@ export const WHEEL = {
   // pressure = (recencyWeight · recency + frequencyWeight · frequency) ^ pressureExponent
   // Frequency counts for more than recency, and the exponent (above 1) keeps
   // the slice small after one or two deliveries, so it grows gradually.
+  // The two weights add up to 1, so pressure stays within 0…1 and the corners
+  // hold. To make the slice grow more gently, raise pressureExponent instead.
   recencyWeight: 0.25,
   frequencyWeight: 0.75,
   pressureExponent: 1.5,

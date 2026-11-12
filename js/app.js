@@ -336,7 +336,7 @@ function viewToday() {
     h('div', { class: 'variety' }, h('span', { class: 'label' }, t('variety')), varietyControl()),
   );
 
-  if (ui.cooked && dishById(ui.cooked.dishId)) return [header, viewCooked(), wheelButton('wide')];
+  if (ui.cooked && dishById(ui.cooked.dishId)) return [header, viewCooked()];
 
   ensureCurrent();
   const dish = dishById(ui.currentId);
