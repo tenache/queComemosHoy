@@ -18,7 +18,11 @@ export const WHEEL = {
   pressureExponent: 1.5,
   recencyGraceDays: 1, // a delivery up to this long ago counts as "just now"
   recencyFadeDays: 7, // after that, recency = exp(-days / this)
-  windowDays: 30, // frequency = deliveries in this window / windowDays
+  windowDays: 30, // deliveries are counted over this window
+  // frequency = min(deliveries in the window, frequencyCap) / frequencyCap.
+  // Nobody orders every day, so the scale tops out at 12 a month (about three
+  // a week): from there on the slice stays at its maximum (Thomas, 2026-11-12).
+  frequencyCap: 12,
 
   // The spin animation. It is only for show: the result is picked first.
   spinTurns: 5,
@@ -51,7 +55,7 @@ export function wheelStats(deliveries, now) {
   }
 
   const recency = last === null ? 0 : Math.exp(-Math.max(last - WHEEL.recencyGraceDays, 0) / WHEEL.recencyFadeDays);
-  const frequency = Math.min(count, WHEEL.windowDays) / WHEEL.windowDays;
+  const frequency = Math.min(count, WHEEL.frequencyCap) / WHEEL.frequencyCap;
   const pressure = (WHEEL.recencyWeight * recency + WHEEL.frequencyWeight * frequency) ** WHEEL.pressureExponent;
   const weekend = WHEEL.weekendDays.includes(new Date(now).getDay());
   const { min, max } = weekend ? WHEEL.weekend : WHEEL.weekday;

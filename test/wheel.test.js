@@ -55,22 +55,34 @@ test('the four corners are exact', () => {
   assert.equal(cookShare(daily(FRIDAY), FRIDAY), 7 / 8, 'Friday, delivery every day for 30 days');
 });
 
-test('the slice grows gradually: one delivery today gives about 35% on a weekday', () => {
+test('the slice grows gradually: one delivery today gives about 37% on a weekday', () => {
   const one = cookShare(daysAgo(MONDAY, 0), MONDAY);
-  assert.ok(Math.abs(one - 0.35) < 0.01, `one delivery today: ${(one * 100).toFixed(1)}%`);
+  assert.ok(Math.abs(one - 0.37) < 0.01, `one delivery today: ${(one * 100).toFixed(1)}%`);
 
   // A first delivery moves the slice by a fraction of its range, not most of it.
   const range = WHEEL.weekday.max - WHEEL.weekday.min;
   assert.ok(one - WHEEL.weekday.min < range / 4);
-  // Each further delivery (one a day, most recent today) adds a bit more, with no big jump.
+  // Each further delivery (one a day, most recent today) adds a bit more, with no big jump,
+  // up to frequencyCap deliveries. After that the slice stays at its maximum.
   let previous = cookShare([], MONDAY);
   for (let n = 1; n <= 30; n++) {
     const share = cookShare(daysAgo(MONDAY, ...Array.from({ length: n }, (_, i) => i)), MONDAY);
-    assert.ok(share > previous, `${n} deliveries > ${n - 1}`);
-    assert.ok(share - previous < range / 4, `step to ${n} deliveries is ${share - previous}`);
+    if (n <= WHEEL.frequencyCap) {
+      assert.ok(share > previous, `${n} deliveries > ${n - 1}`);
+      assert.ok(share - previous < range / 4, `step to ${n} deliveries is ${share - previous}`);
+    } else {
+      assert.equal(share, 15 / 16, `${n} deliveries stay at the maximum`);
+    }
     previous = share;
   }
-  assert.equal(previous, 15 / 16);
+});
+
+test('frequency tops out at frequencyCap deliveries in 30 days', () => {
+  const at = (n) => cookShare(daysAgo(MONDAY, ...Array.from({ length: n }, (_, i) => i + 1)), MONDAY);
+  assert.equal(WHEEL.frequencyCap, 12);
+  assert.equal(at(12), 15 / 16, '12 deliveries, the last one yesterday, already fill the maximum');
+  assert.equal(at(20), at(12));
+  assert.ok(at(11) < at(12));
 });
 
 test('the slice is never outside [1/8, 15/16]', () => {
@@ -103,8 +115,8 @@ test('factor 1: the more recent the last delivery, the bigger the slice', () => 
 test('factor 2: the more deliveries in the last 30 days, the bigger the slice', () => {
   // Same most recent delivery (3 days ago), more and more before it.
   const withCount = (n) => cookShare(daysAgo(MONDAY, ...Array.from({ length: n }, (_, i) => 3 + i * 0.5)), MONDAY);
-  for (let n = 1; n < 30; n++) assert.ok(withCount(n + 1) > withCount(n), `${n + 1} deliveries > ${n}`);
-  assert.equal(withCount(45), withCount(30), 'capped at one a day');
+  for (let n = 1; n < WHEEL.frequencyCap; n++) assert.ok(withCount(n + 1) > withCount(n), `${n + 1} deliveries > ${n}`);
+  assert.equal(withCount(30), withCount(WHEEL.frequencyCap), `capped at ${WHEEL.frequencyCap} deliveries`);
 
   const old = daysAgo(MONDAY, 3, 31, 35, 60);
   assert.equal(recentCount(old, MONDAY), 1, 'deliveries older than 30 days are not counted');
