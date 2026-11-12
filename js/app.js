@@ -4,10 +4,12 @@
 import { ACTIONS, FAVORITES_MAX, afterMealDue, mainCandidates, mealMinutes, pickDish, pickSide, sidesOf } from './scoring.js';
 import {
   MAX_MAINS,
+  PORTIONS,
   allIngredients,
   allMains,
   cleanDish,
   cleanNames,
+  cleanRecipe,
   favoriteCount,
   isMissing,
   logAfterMeal,
@@ -21,12 +23,15 @@ import {
   toggleFavorite,
   undoCardAction,
 } from './state.js';
+import { formatItem, itemAmount, mealMacros, parseItem } from './nutrition.js';
+import { recipeFor } from './recipes.js';
 import { STORAGE_KEY, loadState, readBackup, saveState } from './storage.js';
 import { lang, t } from './strings.js';
 import { createWheelView } from './wheel-view.js';
 
 const SWIPE_THRESHOLD = 80; // px
 const FLY_MS = 180;
+const TAP_SLOP = 6; // px: a pointer that moved less than this was a tap
 
 const loaded = loadState();
 let state = loaded.state;
@@ -39,6 +44,7 @@ const ui = {
   pinnedSide: null, // 📌 a side the user fixed: only mains that go with it are suggested
   sideSheet: null, // {mode: 'card' | 'pick', mainId, sideId} while the "¿Con qué?" sheet is open
   favorites: null, // Set of dish ids while the "choose your favourites" question shows
+  recipe: null, // {mainId, sideId} while the recipe sheet is open
   cooked: null, // {dishId, event, undo} while the "¡A cocinar!" panel shows
   sheet: null, // {dishId, sideId, selected:Set} while the 🛒 sheet is open
   picking: false, // while the "pick from the whole list" sheet is open
@@ -361,7 +367,10 @@ function attachSwipe(card) {
     card.classList.remove('dragging');
     if (dx > SWIPE_THRESHOLD) swipeRight();
     else if (dx < -SWIPE_THRESHOLD) swipeLeft();
-    else reset();
+    else {
+      reset();
+      if (Math.abs(dx) < TAP_SLOP) openRecipe(ui.currentId, ui.sideId); // a tap, not a drag
+    }
   });
   card.addEventListener('pointercancel', () => {
     pointerId = null;
@@ -519,6 +528,7 @@ function viewToday() {
       h('p', { class: 'label' }, t('mainIngredients')),
       h('div', { class: 'chips static' }, dish.mains.map((m) => h('span', { class: 'chip' }, m))),
       missingNow.length > 0 && h('p', { class: 'missing-now' }, t('missingNow', { list: missingNow.join(', ') })),
+      cardFoot(dish, side),
     ),
   );
   attachSwipe(card);
@@ -560,6 +570,7 @@ function viewCooked() {
       'div',
       { class: 'row' },
       button(t('undo'), undoCook),
+      button(`📝 ${t('recipe')}`, () => openRecipe(dish.id, side?.id ?? null)),
       button(
         t('suggestAnother'),
         () => {
@@ -612,6 +623,12 @@ function dishRow(dish) {
       ),
       dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
     ),
+    recipeFor(dish) &&
+      h(
+        'button',
+        { type: 'button', class: 'star', 'aria-label': t('recipeOf', { name: dish.name }), onclick: () => openRecipe(dish.id, null) },
+        '📝',
+      ),
     dish.role === 'main' && starButton(dish),
   );
 }
@@ -648,6 +665,36 @@ function viewDishForm() {
   const chosenSides = new Set(dish.sides);
 
   const name = h('input', { id: 'f-name', type: 'text', value: dish.name, autocomplete: 'off', required: true });
+
+  // The recipe: the dish's own, or the starter one it shows until the user changes it.
+  const shownRecipe = original ? recipeFor(original) : null;
+  let recipeTouched = false;
+  const touch = () => {
+    recipeTouched = true;
+  };
+  const serves = h('input', {
+    id: 'f-serves',
+    type: 'number',
+    min: String(PORTIONS.min),
+    max: String(PORTIONS.max),
+    step: '1',
+    inputMode: 'numeric',
+    value: String(shownRecipe?.serves ?? PORTIONS.default),
+    oninput: touch,
+  });
+  const recipeItems = h('textarea', {
+    id: 'f-recipe-items',
+    rows: 6,
+    autocapitalize: 'none',
+    value: (shownRecipe?.items ?? []).map((i) => formatItem(i, shownRecipe.serves)).join('\n'),
+    oninput: touch,
+  });
+  const recipeSteps = h('textarea', {
+    id: 'f-recipe-steps',
+    rows: 6,
+    value: (shownRecipe?.steps ?? []).join('\n'),
+    oninput: touch,
+  });
   const emoji = h('input', { id: 'f-emoji', type: 'text', value: dish.emoji, autocomplete: 'off', class: 'emoji-input' });
   const ingredients = h('input', { id: 'f-ingredients', type: 'text', value: dish.ingredients.join(', '), autocomplete: 'off', autocapitalize: 'none' });
   const mains = h('input', { id: 'f-mains', type: 'text', value: dish.mains.join(', '), autocomplete: 'off', autocapitalize: 'none' });
@@ -793,6 +840,14 @@ function viewDishForm() {
       role: picked.role,
       sides: picked.role === 'side' ? [] : sideOptions.filter((o) => chosenSides.has(o.id)).map((o) => o.id),
       favorite: picked.role === 'main' && original?.favorite === true,
+      recipe: recipeTouched
+        ? cleanRecipe({
+            serves: serves.value,
+            items: recipeItems.value.split('\n').map(parseItem).filter(Boolean),
+            steps: recipeSteps.value.split('\n').map((line) => line.replace(/^\s*\d+[.)]\s*/, '')),
+          })
+        : // Untouched: keep its own, and keep the starter recipe if the dish is renamed (it would stop showing).
+          (original?.recipe ?? (shownRecipe && name.value.trim() !== original?.name ? shownRecipe : null)),
     });
     // Look the dish up again by id: the state may have been reloaded while the form was open.
     const index = state.dishes.findIndex((d) => d.id === saved.id);
@@ -839,6 +894,10 @@ function viewDishForm() {
       field(minutes, t('fieldMinutes')),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('fieldHealth')), scale('health', t('fieldHealth'))),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('fieldYum')), scale('yum', t('fieldYum'))),
+      h('h2', { class: 'section' }, `📝 ${t('recipe')}`),
+      field(serves, t('fieldServes')),
+      field(recipeItems, t('fieldRecipeItems'), t('fieldRecipeItemsHelp')),
+      field(recipeSteps, t('fieldRecipeSteps'), t('fieldRecipeStepsHelp')),
       h('label', { class: 'check' }, neverShow, t('fieldNeverShow')),
       error,
       h(
@@ -968,6 +1027,9 @@ function viewSettings() {
     h('h2', { class: 'section' }, t('variety')),
     varietyControl(),
     h('p', { class: 'help' }, t('varietyHelp')),
+    h('h2', { class: 'section' }, t('portions')),
+    portionsControl(),
+    h('p', { class: 'help' }, t('portionsHelp')),
     h('h2', { class: 'section' }, t('backup')),
     h('p', { class: 'help' }, t('backupHelp')),
     h('div', { class: 'row' }, button(t('exportData'), exportData), button(t('importData'), () => fileInput.click())),
@@ -1168,6 +1230,122 @@ function overlaySide() {
   );
 }
 
+// ---- Recipes and macros ------------------------------------------------
+
+function openRecipe(mainId, sideId = null) {
+  if (!dishById(mainId)) return;
+  ui.recipe = { mainId, sideId };
+  render();
+}
+
+const round = (n) => Math.round(n);
+
+/** Macros and the recipe link at the bottom of the card. */
+function cardFoot(main, side) {
+  const macros = mealMacros(recipeFor(main), recipeFor(side));
+  return h(
+    'div',
+    { class: 'card-foot' },
+    macros && macros.kcal > 0 && h('span', { class: 'macros-short' }, t('macrosShort', { kcal: round(macros.kcal), protein: round(macros.protein) })),
+    button(`📝 ${t('recipe')}`, () => openRecipe(main.id, side?.id ?? null), 'small ghost'),
+  );
+}
+
+function setPortions(n) {
+  state.settings.portions = Math.min(PORTIONS.max, Math.max(PORTIONS.min, n));
+  commit();
+}
+
+/** − N + for how many people the amounts are for. */
+function portionsControl() {
+  const n = state.settings.portions;
+  return h(
+    'div',
+    { class: 'stepper', role: 'group', 'aria-label': t('portions') },
+    h('button', { type: 'button', 'aria-label': t('portionsLess'), disabled: n <= PORTIONS.min, onclick: () => setPortions(n - 1) }, '−'),
+    h('span', { 'aria-live': 'polite' }, t('portionsN', { n })),
+    h('button', { type: 'button', 'aria-label': t('portionsMore'), disabled: n >= PORTIONS.max, onclick: () => setPortions(n + 1) }, '+'),
+  );
+}
+
+/** One dish's recipe, with amounts for the portions setting. */
+function recipeSection(dish) {
+  const recipe = recipeFor(dish);
+  const portions = state.settings.portions;
+  const head = h('h3', { class: 'recipe-title' }, `${dish.emoji} ${dish.name}`);
+  if (!recipe) {
+    return h(
+      'section',
+      { class: 'recipe' },
+      head,
+      h('p', { class: 'help' }, t('noRecipe')),
+      button(t('addRecipe'), () => {
+        ui.recipe = null;
+        ui.tab = 'dishes';
+        openDishForm(dish.id);
+      }, 'small'),
+    );
+  }
+  return h(
+    'section',
+    { class: 'recipe' },
+    head,
+    h('p', { class: 'list-meta' }, `⏱ ${t('minutes', { n: dish.cookMinutes })}`),
+    h(
+      'ul',
+      { class: 'recipe-items' },
+      recipe.items.map((item) => {
+        const amount = itemAmount(item, recipe.serves, portions);
+        return h('li', null, h('span', null, item.text), amount && h('span', { class: 'amount' }, amount));
+      }),
+    ),
+    recipe.steps.length > 0 && h('ol', { class: 'recipe-steps' }, recipe.steps.map((step) => h('li', null, step))),
+  );
+}
+
+/** Per-portion macros of the meal, with what couldn't be counted. */
+function macrosTable(main, side) {
+  const macros = mealMacros(recipeFor(main), recipeFor(side));
+  if (!macros || macros.kcal <= 0) return null;
+  const row = (label, value, unit) => h('div', { class: 'macro' }, h('span', { class: 'macro-value' }, `${round(value)}${unit}`), h('span', { class: 'macro-label' }, label));
+  return h(
+    'section',
+    { class: 'macros' },
+    h('p', { class: 'label' }, side ? t('macrosTitleMeal') : t('macrosTitle')),
+    h(
+      'div',
+      { class: 'macro-grid' },
+      row(t('kcal'), macros.kcal, ''),
+      row(t('protein'), macros.protein, ' g'),
+      row(t('carbs'), macros.carbs, ' g'),
+      row(t('fat'), macros.fat, ' g'),
+      row(t('fiber'), macros.fiber, ' g'),
+    ),
+    macros.missing.length > 0 && h('p', { class: 'help' }, t('macrosMissing', { list: macros.missing.join(', ') })),
+    h('p', { class: 'help' }, t('macrosNote')),
+  );
+}
+
+function overlayRecipe() {
+  const main = dishById(ui.recipe.mainId);
+  const side = dishById(ui.recipe.sideId);
+  return sheet(
+    `📝 ${side ? mealName(main, side) : main.name}`,
+    h('div', { class: 'row portions-row' }, h('span', { class: 'label' }, t('portions')), portionsControl()),
+    recipeSection(main),
+    side && recipeSection(side),
+    macrosTable(main, side),
+    button(
+      t('close'),
+      () => {
+        ui.recipe = null;
+        render();
+      },
+      'sheet-foot',
+    ),
+  );
+}
+
 /** First run (and once after the update that added favourites): choose up to FAVORITES_MAX favourites. */
 function overlayFavorites() {
   const chosen = ui.favorites;
@@ -1303,6 +1481,7 @@ function render() {
   if (ui.afterMeal && !dishById(ui.afterMeal.dishId)) ui.afterMeal = null;
   if (ui.sheet && !dishById(ui.sheet.dishId)) ui.sheet = null;
   if (ui.sideSheet && !dishById(ui.sideSheet.mainId)) ui.sideSheet = null;
+  if (ui.recipe && !dishById(ui.recipe.mainId)) ui.recipe = null;
   // Ask for favourites once, on Hoy, when nothing else is open.
   const quiet = !ui.afterMeal && !ui.sheet && !ui.picking && !ui.sideSheet && !ui.cooked && !ui.wheel;
   if (!ui.favorites && !state.settings.favoritesAsked && !ui.readOnly && ui.tab === 'today' && quiet) {
@@ -1336,7 +1515,9 @@ function render() {
           ? overlaySide()
           : ui.picking
             ? overlayPicker()
-            : null;
+            : ui.recipe
+              ? overlayRecipe()
+              : null;
   $('overlay').replaceChildren(...(overlay ? [overlay] : []));
   document.body.classList.toggle('has-overlay', Boolean(overlay));
 }
@@ -1426,14 +1607,15 @@ document.addEventListener('visibilitychange', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.picking || ui.sideSheet)) {
+  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.picking || ui.sideSheet || ui.recipe)) {
     ui.sheet = null;
     ui.picking = false;
     ui.sideSheet = null;
+    ui.recipe = null;
     render();
     return;
   }
-  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.afterMeal) return;
+  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.recipe || ui.afterMeal) return;
   if (e.target.closest?.('input, textarea, select')) return;
   if (e.key === 'ArrowRight') swipeRight();
   else if (e.key === 'ArrowLeft') swipeLeft();
