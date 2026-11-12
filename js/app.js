@@ -1,13 +1,14 @@
 // UI. All text comes from strings.js, all scoring from scoring.js, all state
 // changes go through state.js and are saved by commit().
 
-import { ACTIONS, afterMealDue, pickDish } from './scoring.js';
+import { ACTIONS, FAVORITES_MAX, afterMealDue, mainCandidates, mealMinutes, pickDish, pickSide, sidesOf } from './scoring.js';
 import {
   MAX_MAINS,
   allIngredients,
   allMains,
   cleanDish,
   cleanNames,
+  favoriteCount,
   isMissing,
   logAfterMeal,
   logCardAction,
@@ -15,6 +16,9 @@ import {
   markMissing,
   normalizeState,
   planUndo,
+  setFavorites,
+  splitMissing,
+  toggleFavorite,
   undoCardAction,
 } from './state.js';
 import { STORAGE_KEY, loadState, readBackup, saveState } from './storage.js';
@@ -29,9 +33,14 @@ let state = loaded.state;
 
 const ui = {
   tab: 'today',
-  currentId: null, // dish on the suggestion card
+  currentId: null, // dish on the suggestion card (always a main)
+  sideId: null, // the side shown with it, or null ("sin acompañamiento", or a complete dish)
+  sideFor: null, // the card the side was drawn for: a new card draws a new side
+  pinnedSide: null, // 📌 a side the user fixed: only mains that go with it are suggested
+  sideSheet: null, // {mode: 'card' | 'pick', mainId, sideId} while the "¿Con qué?" sheet is open
+  favorites: null, // Set of dish ids while the "choose your favourites" question shows
   cooked: null, // {dishId, event, undo} while the "¡A cocinar!" panel shows
-  sheet: null, // {dishId, selected:Set} while the 🛒 sheet is open
+  sheet: null, // {dishId, sideId, selected:Set} while the 🛒 sheet is open
   picking: false, // while the "pick from the whole list" sheet is open
   readOnly: false, // stored data is from a newer app version: never save over it
   afterMeal: null, // {event, dishId, selected:Set, verdict} while the question shows
@@ -75,7 +84,7 @@ function segmented(label, options, value, onChange) {
 }
 
 /** Tappable ingredient chips backed by a Set of selected names. */
-function chipPicker(names, selected) {
+function chipPicker(names, selected, onChange = null) {
   return h(
     'div',
     { class: 'chips' },
@@ -90,6 +99,7 @@ function chipPicker(names, selected) {
             if (selected.has(name)) selected.delete(name);
             else selected.add(name);
             chip.setAttribute('aria-pressed', String(selected.has(name)));
+            onChange?.();
           },
         },
         name,
@@ -165,24 +175,59 @@ function scoringContext() {
   };
 }
 
+/** The mains the card can show: all of them, or only those that go with the pinned side. */
+const cardCandidates = () => mainCandidates(state.dishes, ui.pinnedSide);
+
 function pick(exclude = []) {
   const variety = state.settings.variety;
   const ctx = scoringContext();
+  const candidates = cardCandidates();
   // Don't show the same card twice in a row, unless it's the only one left.
-  return pickDish(state.dishes, ctx, variety, { exclude }) ?? pickDish(state.dishes, ctx, variety);
+  return pickDish(candidates, ctx, variety, { exclude }) ?? pickDish(candidates, ctx, variety);
 }
 
 function nextCard() {
   ui.currentId = pick(ui.currentId ? [ui.currentId] : [])?.id ?? null;
+  ui.sideFor = null;
 }
 
 function ensureCurrent() {
+  if (ui.pinnedSide && !dishById(ui.pinnedSide)) ui.pinnedSide = null;
   const current = dishById(ui.currentId);
-  if (!current || current.neverShow) ui.currentId = pick()?.id ?? null;
+  if (!current || current.neverShow || !cardCandidates().includes(current)) {
+    ui.currentId = pick()?.id ?? null;
+    ui.sideFor = null;
+  }
+  ensureSide();
 }
 
+/** Draws the side for the card once per card, and again if the one shown went away. */
+function ensureSide() {
+  const main = dishById(ui.currentId);
+  if (!main) {
+    ui.sideId = ui.sideFor = null;
+    return;
+  }
+  const options = sidesOf(main, state.dishes);
+  const stillThere = ui.sideId === null || options.some((d) => d.id === ui.sideId);
+  if (ui.sideFor === main.id && stillThere) return;
+  ui.sideFor = main.id;
+  ui.sideId = options.some((d) => d.id === ui.pinnedSide)
+    ? ui.pinnedSide
+    : (pickSide(main, scoringContext(), state.settings.variety)?.id ?? null);
+}
+
+/** "Milanesas con puré de papas", or just the main's name. */
+function mealName(main, side) {
+  if (!side) return main.name;
+  return t('mealWith', { main: main.name, side: side.name.charAt(0).toLocaleLowerCase('es') + side.name.slice(1) });
+}
+
+/** Ingredients of a main and its side, without repeats. */
+const mealIngredients = (main, side) => [...new Set([...main.ingredients, ...(side?.ingredients ?? [])])];
+
 function checkAfterMeal() {
-  if (ui.afterMeal || ui.sheet || ui.picking) return;
+  if (ui.afterMeal || ui.sheet || ui.picking || ui.sideSheet || ui.favorites) return;
   const due = afterMealDue(state.events, state.dishes, Date.now());
   if (!due) return;
   ui.afterMeal = { event: due.event, dishId: due.dish.id, selected: new Set(), verdict: null };
@@ -191,16 +236,52 @@ function checkAfterMeal() {
 
 // ---- Card actions -------------------------------------------------------
 
-/** Logs a meal: the card's dish, or any dish picked from the whole list. */
-function cook(action, missing = [], dishId = ui.currentId) {
+/** Logs a meal: the card's dish with its side, or any dish picked from the whole list. */
+function cook(action, missing = [], dishId = ui.currentId, sideId = dishId === ui.currentId ? ui.sideId : null) {
   const dish = dishById(dishId);
   if (!dish) return;
-  const undo = planUndo(state, dish.id, missing);
-  const event = logCardAction(state, dish.id, action, missing);
+  const undo = planUndo(state, dish.id, missing, sideId);
+  const event = logCardAction(state, dish.id, action, missing, Date.now(), sideId);
   ui.cooked = { dishId: dish.id, event, undo };
   ui.sheet = null;
+  ui.sideSheet = null;
   ui.picking = false;
+  ui.pinnedSide = null; // the pin was for tonight's meal
   commit();
+}
+
+/**
+ * "Me falta" when only the side's ingredients are missing: the side gets the
+ * light "missing" penalty and is swapped for another one. The main is untouched.
+ */
+function changeSideForMissing(missing) {
+  const main = dishById(ui.currentId);
+  const old = ui.sideId;
+  if (!main || !old) return;
+  logCardAction(state, old, ACTIONS.MISSING_REJECT, missing);
+  if (ui.pinnedSide === old) ui.pinnedSide = null;
+  const next = pickSide(main, scoringContext(), state.settings.variety, { exclude: [old] });
+  ui.sideId = next && next.id !== old ? next.id : null;
+  ui.sideFor = main.id;
+  ui.sheet = null;
+  commit();
+}
+
+function togglePin() {
+  const side = dishById(ui.sideId);
+  if (ui.pinnedSide) ui.pinnedSide = null;
+  else if (side) ui.pinnedSide = side.id;
+  render();
+}
+
+function unpin() {
+  ui.pinnedSide = null;
+  render();
+}
+
+function openSideSheet(mode, mainId, sideId) {
+  ui.sideSheet = { mode, mainId, sideId };
+  render();
 }
 
 function reject(action, missing = []) {
@@ -222,7 +303,9 @@ function undoCook() {
 function openMissingSheet() {
   const dish = dishById(ui.currentId);
   if (!dish) return;
-  ui.sheet = { dishId: dish.id, selected: new Set(dish.ingredients.filter((i) => state.missing.includes(i))) };
+  const side = dishById(ui.sideId);
+  const selected = new Set(mealIngredients(dish, side).filter((i) => state.missing.includes(i)));
+  ui.sheet = { dishId: dish.id, sideId: side?.id ?? null, selected };
   render();
 }
 
@@ -255,6 +338,7 @@ function attachSwipe(card) {
 
   card.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || card.classList.contains('flying')) return;
+    if (e.target.closest('button')) return; // the side chip and the pin are taps, not drags
     pointerId = e.pointerId;
     startX = e.clientX;
     dx = 0;
@@ -340,6 +424,23 @@ function viewToday() {
 
   ensureCurrent();
   const dish = dishById(ui.currentId);
+  const pinned = dishById(ui.pinnedSide);
+  const pinNote =
+    pinned &&
+    h('div', { class: 'pin-note', role: 'status' }, h('span', null, t('pinnedNote', { name: pinned.name.toLocaleLowerCase('es') })), button(t('unpinShort'), unpin, 'small ghost'));
+  if (!dish && pinned) {
+    return [
+      header,
+      h(
+        'section',
+        { class: 'empty' },
+        h('div', { class: 'empty-emoji', 'aria-hidden': 'true' }, pinned.emoji),
+        h('h2', null, t('pinnedNone', { name: pinned.name.toLocaleLowerCase('es') })),
+        h('p', null, t('pinnedNoneText', { name: pinned.name.toLocaleLowerCase('es') })),
+        button(`📌 ${t('unpinShort')}`, unpin, 'primary'),
+      ),
+    ];
+  }
   if (!dish) {
     return [
       header,
@@ -356,7 +457,41 @@ function viewToday() {
     ];
   }
 
-  const missingNow = dish.ingredients.filter((i) => isMissing(state, i));
+  const side = dishById(ui.sideId);
+  const hasSides = sidesOf(dish, state.dishes).length > 0;
+  const missingNow = mealIngredients(dish, side).filter((i) => isMissing(state, i));
+  const isPinned = Boolean(side && ui.pinnedSide === side.id);
+  const sideRow =
+    hasSides &&
+    h(
+      'div',
+      { class: 'side-row' },
+      h('span', { class: 'label' }, t('withSide')),
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'side-chip',
+          'aria-label': t('changeSide', { name: dish.name }),
+          onclick: () => openSideSheet('card', dish.id, ui.sideId),
+        },
+        side ? `${side.emoji} ${side.name}` : t('noSide'),
+        h('span', { class: 'caret', 'aria-hidden': 'true' }, '▾'),
+      ),
+      side &&
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'pin',
+            'aria-pressed': String(isPinned),
+            'aria-label': isPinned ? t('unpin', { name: side.name }) : t('pin', { name: side.name }),
+            title: isPinned ? t('unpin', { name: side.name }) : t('pin', { name: side.name }),
+            onclick: togglePin,
+          },
+          '📌',
+        ),
+    );
   const card = h(
     'article',
     { class: 'card', 'aria-label': dish.name },
@@ -370,11 +505,12 @@ function viewToday() {
     h(
       'div',
       { class: 'card-body' },
-      h('h2', null, dish.name),
+      h('h2', null, dish.favorite && h('span', { class: 'fav', 'aria-label': t('favorite') }, '⭐ '), dish.name),
+      sideRow,
       h(
         'p',
         { class: 'meta' },
-        h('span', null, `⏱ ${t('minutes', { n: dish.cookMinutes })}`),
+        h('span', null, `⏱ ${t('minutes', { n: mealMinutes(dish, side) })}`),
         rating(t('health'), dish.health),
         rating(t('yum'), dish.yum),
       ),
@@ -387,6 +523,7 @@ function viewToday() {
 
   return [
     header,
+    pinNote,
     h('div', { class: 'card-area' }, card),
     h(
       'div',
@@ -402,15 +539,20 @@ function viewToday() {
 
 function viewCooked() {
   const dish = dishById(ui.cooked.dishId);
+  const side = dishById(ui.cooked.event.sideId);
   const toBuy = ui.cooked.event.missing;
   return h(
     'section',
     { class: 'cooked' },
-    h('div', { class: 'cooked-art', style: `background:${gradientFor(dish)}` }, h('span', { 'aria-hidden': 'true' }, dish.emoji)),
+    h(
+      'div',
+      { class: 'cooked-art', style: `background:${gradientFor(dish)}` },
+      h('span', { 'aria-hidden': 'true' }, side ? `${dish.emoji}${side.emoji}` : dish.emoji),
+    ),
     h('h2', null, t('cookedTitle')),
-    h('p', null, t('cookedText', { name: dish.name })),
+    h('p', null, t('cookedText', { name: mealName(dish, side).toLocaleLowerCase('es') })),
     h('p', { class: 'label' }, t('ingredients')),
-    h('div', { class: 'chips static' }, dish.ingredients.map((i) => h('span', { class: 'chip' }, i))),
+    h('div', { class: 'chips static' }, mealIngredients(dish, side).map((i) => h('span', { class: 'chip' }, i))),
     toBuy.length > 0 && h('p', { class: 'missing-now' }, `🛒 ${t('cookedToBuy', { list: toBuy.join(', ') })}`),
     h(
       'div',
@@ -429,37 +571,58 @@ function viewCooked() {
   );
 }
 
+function starButton(dish) {
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'star',
+      'aria-pressed': String(dish.favorite),
+      'aria-label': dish.favorite ? t('favoriteRemove', { name: dish.name }) : t('favoriteAdd', { name: dish.name }),
+      onclick: () => {
+        if (toggleFavorite(state, dish.id)) commit();
+        else addBanner('favorites', t('favoritesFull', { n: FAVORITES_MAX }));
+      },
+    },
+    dish.favorite ? '⭐' : '☆',
+  );
+}
+
+function dishRow(dish) {
+  const sideCount = dish.role === 'main' ? sidesOf(dish, state.dishes).length : 0;
+  const sidesText = sideCount === 0 ? '' : ` · ${sideCount === 1 ? t('sidesCountOne') : t('sidesCount', { n: sideCount })}`;
+  return h(
+    'li',
+    { class: 'list-item' },
+    h(
+      'button',
+      { type: 'button', class: 'list-row', onclick: () => openDishForm(dish.id) },
+      h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
+      h(
+        'span',
+        { class: 'list-text' },
+        h('span', { class: 'list-name' }, dish.name),
+        h(
+          'span',
+          { class: 'list-meta' },
+          `⏱ ${t('minutes', { n: dish.cookMinutes })} · ${t('health')} ${Math.round(dish.health)} · ${t('yum')} ${Math.round(dish.yum)}${sidesText}`,
+        ),
+      ),
+      dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
+    ),
+    dish.role === 'main' && starButton(dish),
+  );
+}
+
 function viewDishes() {
   if (ui.editing) return viewDishForm();
+  const sides = state.dishes.filter((d) => d.role === 'side');
   return [
     h('header', { class: 'top' }, h('h1', null, t('dishesTitle'))),
     button(`＋ ${t('addDish')}`, () => openDishForm(null), 'primary wide'),
-    h(
-      'ul',
-      { class: 'list' },
-      state.dishes.map((dish) =>
-        h(
-          'li',
-          null,
-          h(
-            'button',
-            { type: 'button', class: 'list-row', onclick: () => openDishForm(dish.id) },
-            h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
-            h(
-              'span',
-              { class: 'list-text' },
-              h('span', { class: 'list-name' }, dish.name),
-              h(
-                'span',
-                { class: 'list-meta' },
-                `⏱ ${t('minutes', { n: dish.cookMinutes })} · ${t('health')} ${Math.round(dish.health)} · ${t('yum')} ${Math.round(dish.yum)}`,
-              ),
-            ),
-            dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
-          ),
-        ),
-      ),
-    ),
+    h('ul', { class: 'list' }, mainCandidates(state.dishes).map(dishRow)),
+    sides.length > 0 && h('h2', { class: 'list-heading' }, t('sidesSection')),
+    sides.length > 0 && h('ul', { class: 'list' }, sides.map(dishRow)),
   ];
 }
 
@@ -478,8 +641,9 @@ const splitList = (text) => cleanNames(String(text).split(','));
 
 function viewDishForm() {
   const original = ui.editing.id ? dishById(ui.editing.id) : null;
-  const dish = original ?? { name: '', emoji: '🍽️', ingredients: [], mains: [], cookMinutes: 30, health: 3, yum: 3, neverShow: false };
-  const picked = { health: Math.round(dish.health), yum: Math.round(dish.yum) };
+  const dish = original ?? { name: '', emoji: '🍽️', ingredients: [], mains: [], cookMinutes: 30, health: 3, yum: 3, neverShow: false, role: 'main', sides: [] };
+  const picked = { health: Math.round(dish.health), yum: Math.round(dish.yum), role: dish.role };
+  const chosenSides = new Set(dish.sides);
 
   const name = h('input', { id: 'f-name', type: 'text', value: dish.name, autocomplete: 'off', required: true });
   const emoji = h('input', { id: 'f-emoji', type: 'text', value: dish.emoji, autocomplete: 'off', class: 'emoji-input' });
@@ -543,6 +707,62 @@ function viewDishForm() {
     return group;
   };
 
+  // Role (plato / acompañamiento), and for a plato the dishes that go with it.
+  const roleHelp = h('p', { class: 'help' });
+  const sidesField = h('div', { class: 'field' });
+  const otherDishes = state.dishes.filter((d) => d.id !== original?.id);
+  const sideOptions = [...otherDishes.filter((d) => d.role === 'side'), ...otherDishes.filter((d) => d.role === 'main')];
+  const roleGroup = h('div', { class: 'segmented', role: 'group', 'aria-label': t('fieldRole') });
+  const drawRole = () => {
+    roleGroup.replaceChildren(
+      ...[
+        ['main', t('roleMain')],
+        ['side', t('roleSide')],
+      ].map(([value, label]) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            'aria-pressed': String(picked.role === value),
+            onclick: () => {
+              picked.role = value;
+              drawRole();
+            },
+          },
+          label,
+        ),
+      ),
+    );
+    roleHelp.textContent = picked.role === 'side' ? t('roleHelpSide') : t('roleHelpMain');
+    sidesField.hidden = picked.role === 'side';
+  };
+  sidesField.append(
+    h('span', { class: 'field-label' }, t('fieldSides')),
+    h('p', { class: 'help' }, t('fieldSidesHelp')),
+    h(
+      'div',
+      { class: 'chips' },
+      sideOptions.map((option) => {
+        const chip = h(
+          'button',
+          {
+            type: 'button',
+            class: 'chip small',
+            'aria-pressed': String(chosenSides.has(option.id)),
+            onclick: () => {
+              if (chosenSides.has(option.id)) chosenSides.delete(option.id);
+              else chosenSides.add(option.id);
+              chip.setAttribute('aria-pressed', String(chosenSides.has(option.id)));
+            },
+          },
+          `${option.emoji} ${option.name}`,
+        );
+        return chip;
+      }),
+    ),
+  );
+  drawRole();
+
   const save = (e) => {
     e.preventDefault();
     const mainsList = splitList(mains.value);
@@ -568,11 +788,18 @@ function viewDishForm() {
       yum: keep('yum'),
       liking: original?.liking ?? 0,
       neverShow: neverShow.checked,
+      role: picked.role,
+      sides: picked.role === 'side' ? [] : sideOptions.filter((o) => chosenSides.has(o.id)).map((o) => o.id),
+      favorite: picked.role === 'main' && original?.favorite === true,
     });
     // Look the dish up again by id: the state may have been reloaded while the form was open.
     const index = state.dishes.findIndex((d) => d.id === saved.id);
     if (index >= 0) state.dishes[index] = { ...saved, liking: state.dishes[index].liking };
     else state.dishes.push(saved);
+    // A dish that became a side can't be the card or be pinned as a main.
+    if (saved.role === 'side' && ui.currentId === saved.id) ui.currentId = null;
+    if (saved.role === 'main' && ui.pinnedSide === saved.id) ui.pinnedSide = null;
+    ui.sideFor = null;
     ui.editing = null;
     commit();
   };
@@ -580,7 +807,9 @@ function viewDishForm() {
   const remove = () => {
     if (!window.confirm(t('confirmDelete', { name: original.name }))) return;
     state.dishes = state.dishes.filter((d) => d.id !== original.id);
+    for (const d of state.dishes) d.sides = d.sides.filter((id) => id !== original.id);
     if (ui.currentId === original.id) ui.currentId = null;
+    if (ui.pinnedSide === original.id) ui.pinnedSide = null;
     if (ui.cooked?.dishId === original.id) ui.cooked = null;
     ui.editing = null;
     commit();
@@ -603,6 +832,8 @@ function viewDishForm() {
       field(ingredients, t('fieldIngredients'), t('fieldIngredientsHelp')),
       field(mains, t('fieldMains'), t('fieldMainsHelp')),
       tagChips,
+      h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('fieldRole')), roleGroup, roleHelp),
+      sidesField,
       field(minutes, t('fieldMinutes')),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('fieldHealth')), scale('health', t('fieldHealth'))),
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('fieldYum')), scale('yum', t('fieldYum'))),
@@ -773,17 +1004,32 @@ function sheet(title, ...children) {
 
 function overlayMissing() {
   const dish = dishById(ui.sheet.dishId);
+  const side = dishById(ui.sheet.sideId);
   const selected = ui.sheet.selected;
+  const sideOnly = side ? side.ingredients.filter((i) => !dish.ingredients.includes(i)) : [];
+  // When everything marked is the side's, the way out is another side, not another dish.
+  const other = button(t('otherOption'), () => {
+    const split = splitMissing(dish, side, [...selected]);
+    if (side && split.main.length === 0 && split.side.length > 0) changeSideForMissing(split.side);
+    else reject(ACTIONS.MISSING_REJECT, [...selected]);
+  });
+  const syncOther = () => {
+    const split = splitMissing(dish, side, [...selected]);
+    other.textContent = side && split.main.length === 0 && split.side.length > 0 ? t('missingSideOnly') : t('otherOption');
+  };
+  syncOther();
   return sheet(
     `🛒 ${t('missingTitle')}`,
-    h('p', { class: 'sheet-dish' }, `${dish.emoji} ${dish.name}`),
     h('p', { class: 'help' }, t('missingHelp')),
-    chipPicker(dish.ingredients, selected),
+    h('p', { class: 'sheet-dish' }, `${dish.emoji} ${dish.name}`),
+    chipPicker(dish.ingredients, selected, syncOther),
+    sideOnly.length > 0 && h('p', { class: 'sheet-dish' }, `${side.emoji} ${side.name}`),
+    sideOnly.length > 0 && chipPicker(sideOnly, selected, syncOther),
     h(
       'div',
       { class: 'stack' },
       button(t('cookAnyway'), () => cook(ACTIONS.COOK_ANYWAY, [...selected]), 'primary'),
-      button(t('otherOption'), () => reject(ACTIONS.MISSING_REJECT, [...selected])),
+      other,
       button(
         t('cancel'),
         () => {
@@ -801,21 +1047,46 @@ function openPicker() {
   render();
 }
 
+/** A main picked from the list: straight to "¡A cocinar!", or first "¿Con qué?" if it takes a side. */
+function pickFromList(dish) {
+  if (sidesOf(dish, state.dishes).length === 0) return cook(ACTIONS.PICK, [], dish.id, null);
+  const suggested = pickSide(dish, scoringContext(), state.settings.variety);
+  ui.picking = false;
+  openSideSheet('pick', dish.id, suggested?.id ?? null);
+}
+
+/** A side chosen first: pin it, and show a main that goes with it. */
+function pinFromList(side) {
+  ui.pinnedSide = side.id;
+  ui.picking = false;
+  const current = dishById(ui.currentId);
+  if (current && sidesOf(current, state.dishes).some((d) => d.id === side.id)) {
+    ui.sideId = side.id;
+    ui.sideFor = current.id;
+  } else {
+    ui.currentId = null;
+  }
+  ui.cooked = null;
+  render();
+}
+
 /** The whole dish list, "never show" ones included. Tapping one logs it as tonight's meal. */
 function overlayPicker() {
+  // Sides that go with at least one main can be chosen first.
+  const pinnable = state.dishes.filter((d) => d.role === 'side' && mainCandidates(state.dishes, d.id).length > 0);
   return sheet(
     `📖 ${t('pickTitle')}`,
     h('p', { class: 'help' }, t('pickHelp')),
     h(
       'ul',
       { class: 'list' },
-      state.dishes.map((dish) =>
+      mainCandidates(state.dishes).map((dish) =>
         h(
           'li',
           null,
           h(
             'button',
-            { type: 'button', class: 'list-row', onclick: () => cook(ACTIONS.PICK, [], dish.id) },
+            { type: 'button', class: 'list-row', onclick: () => pickFromList(dish) },
             h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
             h(
               'span',
@@ -828,6 +1099,14 @@ function overlayPicker() {
         ),
       ),
     ),
+    pinnable.length > 0 && h('p', { class: 'label' }, t('pickSidesFirst')),
+    pinnable.length > 0 && h('p', { class: 'help' }, t('pickSidesFirstHelp')),
+    pinnable.length > 0 &&
+      h(
+        'div',
+        { class: 'chips' },
+        pinnable.map((side) => button(`📌 ${side.emoji} ${side.name}`, () => pinFromList(side), 'chip')),
+      ),
     button(
       t('cancel'),
       () => {
@@ -839,9 +1118,110 @@ function overlayPicker() {
   );
 }
 
+/** "¿Con qué?": the main's sides. On the card it only changes the suggestion; after a list pick it logs the meal. */
+function overlaySide() {
+  const ss = ui.sideSheet;
+  const main = dishById(ss.mainId);
+  const options = sidesOf(main, state.dishes);
+  const choose = (sideId) => {
+    if (ss.mode === 'pick') return cook(ACTIONS.PICK, [], main.id, sideId);
+    ui.sideId = sideId;
+    ui.sideFor = main.id;
+    if (ui.pinnedSide && ui.pinnedSide !== sideId) ui.pinnedSide = null; // a new choice replaces the pin
+    ui.sideSheet = null;
+    render();
+  };
+  const row = (dish, label, meta) =>
+    h(
+      'li',
+      null,
+      h(
+        'button',
+        { type: 'button', class: 'list-row', 'aria-pressed': String((dish?.id ?? null) === ss.sideId), onclick: () => choose(dish?.id ?? null) },
+        h('span', { class: 'list-emoji', style: dish ? `background:${gradientFor(dish)}` : '', 'aria-hidden': 'true' }, dish?.emoji ?? '—'),
+        h('span', { class: 'list-text' }, h('span', { class: 'list-name' }, label), meta && h('span', { class: 'list-meta' }, meta)),
+      ),
+    );
+  return sheet(
+    `${main.emoji} ${t('sideTitle')}`,
+    h('p', { class: 'sheet-dish' }, main.name),
+    h('p', { class: 'help' }, ss.mode === 'pick' ? t('sidePickHelp') : t('sideHelp')),
+    h(
+      'ul',
+      { class: 'list' },
+      options.map((d) => {
+        const missing = d.ingredients.filter((i) => isMissing(state, i));
+        return row(d, d.name, [`⏱ ${t('minutes', { n: d.cookMinutes })}`, missing.length > 0 && t('missingNow', { list: missing.join(', ') })].filter(Boolean).join(' · '));
+      }),
+      row(null, t('noSide'), null),
+    ),
+    button(
+      t('cancel'),
+      () => {
+        ui.sideSheet = null;
+        render();
+      },
+      'sheet-foot',
+    ),
+  );
+}
+
+/** First run (and once after the update that added favourites): choose up to FAVORITES_MAX favourites. */
+function overlayFavorites() {
+  const chosen = ui.favorites;
+  const count = h('p', { class: 'label' });
+  const sync = () => {
+    count.textContent = t('favoritesCount', { n: chosen.size, max: FAVORITES_MAX });
+  };
+  sync();
+  const finish = (ids) => {
+    if (ids) setFavorites(state, ids);
+    else state.settings.favoritesAsked = true;
+    ui.favorites = null;
+    ui.sideFor = null;
+    commit();
+  };
+  return sheet(
+    t('favoritesTitle', { n: FAVORITES_MAX }),
+    h('p', { class: 'help' }, t('favoritesHelp')),
+    count,
+    h(
+      'div',
+      { class: 'chips' },
+      mainCandidates(state.dishes)
+        .filter((d) => !d.neverShow)
+        .map((dish) => {
+          const chip = h(
+            'button',
+            {
+              type: 'button',
+              class: 'chip',
+              'aria-pressed': String(chosen.has(dish.id)),
+              onclick: () => {
+                if (chosen.has(dish.id)) chosen.delete(dish.id);
+                else if (chosen.size < FAVORITES_MAX) chosen.add(dish.id);
+                chip.setAttribute('aria-pressed', String(chosen.has(dish.id)));
+                sync();
+              },
+            },
+            `${dish.emoji} ${dish.name}`,
+          );
+          return chip;
+        }),
+    ),
+    h(
+      'div',
+      { class: 'row sheet-foot' },
+      button(t('favoritesLater'), () => finish(null), 'ghost'),
+      button(t('done'), () => finish([...chosen]), 'primary'),
+    ),
+  );
+}
+
 function overlayAfterMeal() {
   const am = ui.afterMeal;
   const dish = dishById(am.dishId);
+  const side = dishById(am.event.sideId);
   const finish = (answer) => {
     logAfterMeal(state, am.event, answer);
     ui.afterMeal = null;
@@ -866,11 +1246,12 @@ function overlayAfterMeal() {
   };
   return sheet(
     t('afterMealTitle'),
-    h('p', { class: 'sheet-dish' }, `${dish.emoji} ${dish.name}`),
+    h('p', { class: 'sheet-dish' }, `${dish.emoji}${side?.emoji ?? ''} ${mealName(dish, side)}`),
     h('p', { class: 'label' }, t('ranOut')),
     h('p', { class: 'help' }, t('ranOutHelp')),
-    chipPicker(dish.ingredients, am.selected),
-    h('p', { class: 'label' }, t('howWasIt')),
+    chipPicker(mealIngredients(dish, side), am.selected),
+    // The 👍/👎 moves the main's "rico" score, so say which dish it is about.
+    h('p', { class: 'label' }, side ? t('howWasItMain', { name: dish.name.toLocaleLowerCase('es') }) : t('howWasIt')),
     h('div', { class: 'thumbs' }, verdictButton('up', '👍', t('thumbsUp')), verdictButton('down', '👎', t('thumbsDown'))),
     h(
       'div',
@@ -919,6 +1300,12 @@ function renderBanners() {
 function render() {
   if (ui.afterMeal && !dishById(ui.afterMeal.dishId)) ui.afterMeal = null;
   if (ui.sheet && !dishById(ui.sheet.dishId)) ui.sheet = null;
+  if (ui.sideSheet && !dishById(ui.sideSheet.mainId)) ui.sideSheet = null;
+  // Ask for favourites once, on Hoy, when nothing else is open.
+  const quiet = !ui.afterMeal && !ui.sheet && !ui.picking && !ui.sideSheet && !ui.cooked && !ui.wheel;
+  if (!ui.favorites && !state.settings.favoritesAsked && !ui.readOnly && ui.tab === 'today' && quiet) {
+    ui.favorites = new Set(state.dishes.filter((d) => d.favorite).map((d) => d.id));
+  }
 
   const view = TABS.find(([id]) => id === ui.tab)[3];
   const main = $('view');
@@ -937,7 +1324,17 @@ function render() {
     ),
   );
 
-  const overlay = ui.afterMeal ? overlayAfterMeal() : ui.sheet ? overlayMissing() : ui.picking ? overlayPicker() : null;
+  const overlay = ui.afterMeal
+    ? overlayAfterMeal()
+    : ui.favorites
+      ? overlayFavorites()
+      : ui.sheet
+        ? overlayMissing()
+        : ui.sideSheet
+          ? overlaySide()
+          : ui.picking
+            ? overlayPicker()
+            : null;
   $('overlay').replaceChildren(...(overlay ? [overlay] : []));
   document.body.classList.toggle('has-overlay', Boolean(overlay));
 }
@@ -1008,6 +1405,7 @@ window.addEventListener('storage', (e) => {
   // These hold objects from the old state. An open dish form keeps what was typed.
   ui.cooked = null;
   ui.afterMeal = null;
+  ui.sideFor = null;
   checkAfterMeal();
   if (!ui.editing) render();
 });
@@ -1026,13 +1424,14 @@ document.addEventListener('visibilitychange', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !ui.afterMeal && (ui.sheet || ui.picking)) {
+  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.picking || ui.sideSheet)) {
     ui.sheet = null;
     ui.picking = false;
+    ui.sideSheet = null;
     render();
     return;
   }
-  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.picking || ui.afterMeal) return;
+  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.afterMeal) return;
   if (e.target.closest?.('input, textarea, select')) return;
   if (e.key === 'ArrowRight') swipeRight();
   else if (e.key === 'ArrowLeft') swipeLeft();

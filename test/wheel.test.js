@@ -299,8 +299,8 @@ test('state: v1 data migrates to v2 with the default cuisines and an empty log',
   const before = JSON.stringify(v1);
 
   const migrated = normalizeState(v1);
-  assert.equal(SCHEMA_VERSION, 2);
-  assert.equal(migrated.schemaVersion, 2);
+  assert.ok(SCHEMA_VERSION >= 2);
+  assert.equal(migrated.schemaVersion, SCHEMA_VERSION);
   assert.deepEqual(migrated.cuisines, DEFAULT_CUISINES);
   assert.deepEqual(migrated.deliveries, []);
   assert.equal(migrated.events.length, 1, 'everything else is kept');
