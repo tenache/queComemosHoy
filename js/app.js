@@ -19,6 +19,7 @@ import {
 } from './state.js';
 import { STORAGE_KEY, loadState, readBackup, saveState } from './storage.js';
 import { lang, t } from './strings.js';
+import { createWheelView } from './wheel-view.js';
 
 const SWIPE_THRESHOLD = 80; // px
 const FLY_MS = 180;
@@ -35,6 +36,7 @@ const ui = {
   readOnly: false, // stored data is from a newer app version: never save over it
   afterMeal: null, // {event, dishId, selected:Set, verdict} while the question shows
   editing: null, // {id} (id null = new dish) while the dish form shows
+  wheel: null, // the delivery wheel's screen state while it is open (see wheel-view.js)
   banners: [], // [{id, text, actionLabel?, action?, sticky?}]
   saveWarned: false,
   installPrompt: null,
@@ -310,7 +312,23 @@ function rating(label, value) {
   return h('span', { class: 'rating', 'aria-label': `${label}: ${t('outOf5', { n: Math.round(value) })}` }, `${label} `, dots(value));
 }
 
+const wheelView = createWheelView({
+  h,
+  button,
+  t,
+  lang,
+  ui,
+  getState: () => state,
+  commit: () => commit(),
+  render: () => render(),
+  reducedMotion,
+});
+
+const wheelButton = (cls = '') => button(`🎡 ${t('wheelOpen')}`, wheelView.open, cls);
+
 function viewToday() {
+  if (ui.wheel) return wheelView.view();
+
   const header = h(
     'header',
     { class: 'top' },
@@ -318,7 +336,7 @@ function viewToday() {
     h('div', { class: 'variety' }, h('span', { class: 'label' }, t('variety')), varietyControl()),
   );
 
-  if (ui.cooked && dishById(ui.cooked.dishId)) return [header, viewCooked()];
+  if (ui.cooked && dishById(ui.cooked.dishId)) return [header, viewCooked(), wheelButton('wide')];
 
   ensureCurrent();
   const dish = dishById(ui.currentId);
@@ -334,6 +352,7 @@ function viewToday() {
         button(t('goToDishes'), () => switchTab('dishes'), 'primary'),
         state.dishes.length > 0 && button(`📖 ${t('pickFromList')}`, openPicker),
       ),
+      wheelButton('wide'),
     ];
   }
 
@@ -376,7 +395,7 @@ function viewToday() {
       h('button', { type: 'button', class: 'action cart', onclick: openMissingSheet }, h('span', { 'aria-hidden': 'true' }, '🛒'), t('actionMissing')),
       h('button', { type: 'button', class: 'action yes', onclick: swipeRight }, h('span', { 'aria-hidden': 'true' }, '👉'), t('actionCook')),
     ),
-    button(`📖 ${t('pickFromList')}`, openPicker, 'wide'),
+    h('div', { class: 'row more' }, button(`📖 ${t('pickFromList')}`, openPicker), wheelButton()),
     h('p', { class: 'hint' }, t('swipeHint')),
   ];
 }
@@ -674,6 +693,7 @@ async function importData(file) {
   }
   if (!window.confirm(t('confirmImport', { dishes: state.dishes.length }))) return;
   state = next;
+  wheelView.close();
   Object.assign(ui, { currentId: null, cooked: null, sheet: null, picking: false, afterMeal: null, editing: null });
   commit();
   window.alert(t('importOk'));
@@ -873,6 +893,7 @@ const TABS = [
 function switchTab(tab) {
   ui.tab = tab;
   ui.editing = null;
+  wheelView.close();
   render();
   window.scrollTo(0, 0);
 }
@@ -1011,7 +1032,7 @@ document.addEventListener('keydown', (e) => {
     render();
     return;
   }
-  if (ui.tab !== 'today' || ui.cooked || ui.sheet || ui.picking || ui.afterMeal) return;
+  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.picking || ui.afterMeal) return;
   if (e.target.closest?.('input, textarea, select')) return;
   if (e.key === 'ArrowRight') swipeRight();
   else if (e.key === 'ArrowLeft') swipeLeft();
