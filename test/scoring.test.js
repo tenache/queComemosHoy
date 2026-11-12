@@ -275,8 +275,15 @@ test('after-meal question: due from cook minutes + 60 min, once per meal, not fo
   assert.equal(afterMealDue([], STARTER_DISHES, NOW), null);
 });
 
-test('starter dishes: about 30, valid, and include the ones the spec names', () => {
-  assert.ok(STARTER_DISHES.length >= 28 && STARTER_DISHES.length <= 35, `${STARTER_DISHES.length} dishes`);
+test('starter dishes: about 30 to 40 mains plus sides, valid, and include the ones the spec names', () => {
+  const mains = STARTER_DISHES.filter((d) => d.role === 'main');
+  assert.ok(mains.length >= 28 && mains.length <= 45, `${mains.length} mains`);
+  assert.ok(STARTER_DISHES.every((d) => d.role === 'main' || d.role === 'side'));
+  const ids = new Set(STARTER_DISHES.map((d) => d.id));
+  for (const d of STARTER_DISHES) {
+    for (const s of d.sides) assert.ok(ids.has(s) && s !== d.id, `${d.id}: side ${s} is a starter dish`);
+    if (d.role === 'side') assert.deepEqual(d.sides, [], `${d.id}: a side has no sides`);
+  }
   assert.equal(new Set(STARTER_DISHES.map((d) => d.id)).size, STARTER_DISHES.length, 'ids are unique');
 
   const staples = ['cebolla', 'ajo', 'aceite', 'sal'];

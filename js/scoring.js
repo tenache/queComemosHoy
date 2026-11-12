@@ -13,7 +13,11 @@ export const WEIGHTS = {
   fatigue: 1.5, // per OTHER dish eaten, × shared mains share × exp(-days / fatigueFadeDays)
   fatigueFadeDays: 2,
   fatigueWindowDays: 7,
+  favorite: 0.75, // one of the user's favourites (at most FAVORITES_MAX of them)
 };
+
+// How many dishes can be favourites. Few, so the boost means something.
+export const FAVORITES_MAX = 5;
 
 // How each card action moves a dish's `liking`.
 export const LIKING = {
@@ -62,6 +66,11 @@ export function isEaten(event) {
   return event.action === ACTIONS.COOK || event.action === ACTIONS.COOK_ANYWAY || event.action === ACTIONS.PICK;
 }
 
+/** The dishes a meal event was made of: its main, plus its side if it had one. */
+export function mealIds(event) {
+  return event.sideId ? [event.dishId, event.sideId] : [event.dishId];
+}
+
 // Days from `time` to `now`. Events dated in the future (clock changes) count as "now".
 function daysSince(time, now) {
   return Math.max(0, (now - time) / DAY_MS);
@@ -101,26 +110,31 @@ export function scoreDish(dish, ctx) {
   let score =
     (W.health * (dish.health - 1)) / 4 +
     (W.yum * (dish.yum - 1)) / 4 +
-    clamp(Number(dish.liking) || 0, LIKING.min, LIKING.max) -
+    clamp(Number(dish.liking) || 0, LIKING.min, LIKING.max) +
+    (dish.favorite ? W.favorite : 0) -
     (W.cookTimePerHour * dish.cookMinutes) / 60;
 
   const missingCount = (dish.ingredients ?? []).filter((i) => isMissing(i)).length;
   score -= W.missingIngredient * missingCount;
 
+  // A meal counts for every dish in it: puré eaten as a side yesterday is a
+  // repeat for puré today, and ingredient fatigue for anything with papa.
   let byId = null;
   for (const event of events) {
     const days = daysSince(event.time, now);
-    if (event.dishId === dish.id) {
-      if (event.action === ACTIONS.REJECT) {
-        score -= W.notTonight * Math.exp(-days / W.notTonightFadeDays);
-      } else if (isEaten(event)) {
-        score -= W.repeat * Math.exp(-days / W.repeatFadeDays);
-      }
-    } else if (isEaten(event) && days <= W.fatigueWindowDays) {
+    if (event.action === ACTIONS.REJECT) {
+      if (event.dishId === dish.id) score -= W.notTonight * Math.exp(-days / W.notTonightFadeDays);
+      continue;
+    }
+    if (!isEaten(event)) continue;
+    const ids = mealIds(event);
+    if (ids.includes(dish.id)) {
+      score -= W.repeat * Math.exp(-days / W.repeatFadeDays);
+    } else if (days <= W.fatigueWindowDays) {
       byId ??= new Map(dishes.map((d) => [d.id, d]));
-      const other = byId.get(event.dishId);
-      if (other) {
-        score -= W.fatigue * sharedMainsShare(dish, other) * Math.exp(-days / W.fatigueFadeDays);
+      for (const id of ids) {
+        const other = byId.get(id);
+        if (other) score -= W.fatigue * sharedMainsShare(dish, other) * Math.exp(-days / W.fatigueFadeDays);
       }
     }
   }
@@ -170,6 +184,34 @@ export function probabilities(dishes, ctx, variety = 'medium', exclude = []) {
   }));
 }
 
+// ---- Mains and sides ------------------------------------------------------
+
+/**
+ * Dishes that can be the suggestion card: mains only. With `pinnedSideId`,
+ * only the mains that go with that side ("hoy con puré, ¿con qué?").
+ */
+export function mainCandidates(dishes, pinnedSideId = null) {
+  return dishes.filter((d) => d.role !== 'side' && (!pinnedSideId || (d.sides ?? []).includes(pinnedSideId)));
+}
+
+/** The dishes that go with `main`, in its order, skipping ids that no longer exist and "never show" ones. */
+export function sidesOf(main, dishes) {
+  const byId = new Map(dishes.map((d) => [d.id, d]));
+  return (main?.sides ?? [])
+    .map((id) => byId.get(id))
+    .filter((d) => d && d.id !== main.id && !d.neverShow);
+}
+
+/**
+ * Draws the side to suggest with `main`, with the same scores and variety as
+ * the mains (repeat, fatigue, missing ingredients…). Null for a complete dish.
+ */
+export function pickSide(main, ctx, variety = 'medium', { rng = Math.random, exclude = [] } = {}) {
+  const sides = sidesOf(main, ctx.dishes ?? []);
+  if (sides.length === 0) return null;
+  return pickDish(sides, ctx, variety, { rng, exclude }) ?? pickDish(sides, ctx, variety, { rng });
+}
+
 /** Samples one dish from probabilities(). The only source of randomness. */
 export function pickDish(dishes, ctx, variety = 'medium', { rng = Math.random, exclude = [] } = {}) {
   const table = probabilities(dishes, ctx, variety, exclude);
@@ -180,6 +222,11 @@ export function pickDish(dishes, ctx, variety = 'medium', { rng = Math.random, e
     if (r < 0) return row.dish;
   }
   return table[table.length - 1].dish; // rounding left r a hair above 0
+}
+
+/** Cooking time of a main with its side: they cook at the same time, so the longer of the two. */
+export function mealMinutes(main, side = null) {
+  return Math.max(main.cookMinutes, side?.cookMinutes ?? 0);
 }
 
 /**
@@ -196,10 +243,11 @@ export function afterMealDue(events, dishes, now) {
   if (!meal) return null;
   const dish = dishes.find((d) => d.id === meal.dishId);
   if (!dish) return null;
+  const side = (meal.sideId && dishes.find((d) => d.id === meal.sideId)) || null;
   const asked = events.some((e) => e.action === ACTIONS.AFTER_MEAL && e.mealTime === meal.time);
   if (asked) return null;
   const age = now - meal.time;
-  if (age < (dish.cookMinutes + AFTER_MEAL.delayMinutes) * 60 * 1000) return null;
+  if (age < (mealMinutes(dish, side) + AFTER_MEAL.delayMinutes) * 60 * 1000) return null;
   if (age > AFTER_MEAL.maxAgeHours * 60 * 60 * 1000) return null;
-  return { event: meal, dish };
+  return { event: meal, dish, side };
 }

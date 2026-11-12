@@ -1,24 +1,29 @@
 // The app's state as one versioned JSON object, plus pure helpers that change
 // it. No DOM and no storage here, so `node --test` can cover it.
 
-import { STARTER_DISHES } from './dishes.js';
-import { ACTIONS, LIKING, YUM, applyLiking, applyYum, clamp, normalizeName } from './scoring.js';
+import { NEW_IN_V3, SPLIT_IN_V3, STARTER_DISHES } from './dishes.js';
+import { ACTIONS, FAVORITES_MAX, LIKING, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
 import { DEFAULT_CUISINES, cleanCuisine, cleanCuisines } from './wheel.js';
 
 // 1: the v1 app. 2: adds the delivery wheel (`cuisines`, `deliveries`).
-export const SCHEMA_VERSION = 2;
+// 3: mains and sides (`role`, `sides`, `sideId` on meals) and favourites.
+export const SCHEMA_VERSION = 3;
+export const ROLES = ['main', 'side'];
 export const PANTRY_MODES = ['lazy', 'manual'];
 export const VARIETIES = ['low', 'medium', 'high'];
 export const MAX_MAINS = 3;
 
+const copyStarter = (d) => ({ ...d, ingredients: [...d.ingredients], mains: [...d.mains], sides: [...d.sides] });
+
 export function defaultState() {
   return {
     schemaVersion: SCHEMA_VERSION,
-    dishes: STARTER_DISHES.map((d) => ({ ...d, ingredients: [...d.ingredients], mains: [...d.mains] })),
-    events: [], // {dishId, action, time, missing[]} (+ mealTime, verdict on afterMeal)
+    dishes: STARTER_DISHES.map(copyStarter),
+    events: [], // {dishId, action, time, missing[]} (+ sideId on meals; mealTime, verdict on afterMeal)
     missing: [], // the shopping list: ingredients marked missing
     inStock: [], // manual pantry mode: ingredients the user says they have
-    settings: { pantryMode: 'lazy', variety: 'medium' },
+    // favoritesAsked: the "choose your favourites" question was answered or skipped.
+    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false },
     cuisines: [...DEFAULT_CUISINES], // the delivery wheel's slices
     deliveries: [], // {time, cuisine | null, manual?: true}
   };
@@ -52,7 +57,15 @@ export function cleanDish(raw) {
     yum: cleanNumber(raw.yum, YUM.min, YUM.max, 3),
     liking: cleanNumber(raw.liking, LIKING.min, LIKING.max, 0),
     neverShow: raw.neverShow === true,
+    role: ROLES.includes(raw.role) ? raw.role : 'main',
+    sides: cleanIds(raw.sides),
+    favorite: raw.favorite === true,
   };
+}
+
+/** Distinct non-empty ids, in order. */
+function cleanIds(list) {
+  return [...new Set((Array.isArray(list) ? list : []).filter((x) => x != null && String(x) !== '').map(String))];
 }
 
 function cleanEvent(raw) {
@@ -62,6 +75,7 @@ function cleanEvent(raw) {
     time: Number(raw.time),
     missing: cleanNames(raw.missing),
   };
+  if (isEaten(raw) && raw.sideId != null && String(raw.sideId) !== '') event.sideId = String(raw.sideId);
   if (raw.action === ACTIONS.AFTER_MEAL) {
     event.mealTime = Number(raw.mealTime);
     event.verdict = raw.verdict === 'up' || raw.verdict === 'down' ? raw.verdict : null;
@@ -84,7 +98,54 @@ function migrate(raw) {
     blob.deliveries = [];
     blob.schemaVersion = 2;
   }
+  if (blob.schemaVersion === 2) migrateToV3(blob);
   return blob;
+}
+
+/**
+ * v3 adds mains and sides. Every dish becomes a main with no sides, except
+ * the starter dishes the user hasn't renamed: those get their v3 sides, and
+ * the four that were "main con side" (milanesas con puré…) become the main
+ * alone, with their old meals marked as having had that side. The new
+ * starter dishes are added, so existing users see them too.
+ */
+function migrateToV3(blob) {
+  const starters = new Map(STARTER_DISHES.map((d) => [d.id, d]));
+  const split = new Set();
+  blob.dishes = blob.dishes.map((raw) => {
+    if (!raw || typeof raw !== 'object') return raw;
+    const dish = { ...raw, role: raw.role === 'side' ? 'side' : 'main', sides: Array.isArray(raw.sides) ? raw.sides : [] };
+    const starter = starters.get(String(raw.id));
+    if (!starter) return dish;
+    const name = String(raw.name ?? '').trim();
+    const old = SPLIT_IN_V3[starter.id];
+    if (old && name === old.oldName) {
+      split.add(starter.id);
+      const { name: newName, ingredients, mains, cookMinutes, sides } = copyStarter(starter);
+      return { ...dish, name: newName, ingredients, mains, cookMinutes, sides };
+    }
+    if (name === starter.name) dish.sides = [...starter.sides];
+    return dish;
+  });
+  blob.events = (Array.isArray(blob.events) ? blob.events : []).map((e) =>
+    e && typeof e === 'object' && split.has(String(e.dishId)) && isEaten(e) && !e.sideId
+      ? { ...e, sideId: SPLIT_IN_V3[e.dishId].sideId }
+      : e,
+  );
+  // A new starter the user already has under its name (their own "Salchichas")
+  // isn't added twice: the starters' sides and old meals point at theirs instead.
+  const have = new Set(blob.dishes.map((d) => String(d?.id)));
+  const mine = new Map(blob.dishes.filter((d) => d && typeof d === 'object').map((d) => [normalizeName(d.name), String(d.id)]));
+  const alias = new Map();
+  for (const id of NEW_IN_V3) {
+    if (have.has(id)) continue;
+    const theirs = mine.get(normalizeName(starters.get(id).name));
+    if (theirs) alias.set(id, theirs);
+    else blob.dishes.push(copyStarter(starters.get(id)));
+  }
+  for (const d of blob.dishes) if (d && Array.isArray(d.sides)) d.sides = d.sides.map((id) => alias.get(id) ?? id);
+  blob.events = blob.events.map((e) => (e && alias.has(e.sideId) ? { ...e, sideId: alias.get(e.sideId) } : e));
+  blob.schemaVersion = 3;
 }
 
 /**
@@ -108,6 +169,10 @@ export function normalizeState(input) {
     seenIds.add(dish.id);
     dishes.push(dish);
   }
+  // A side never has sides of its own; a main's sides must exist and can't be itself.
+  for (const dish of dishes) {
+    dish.sides = dish.role === 'side' ? [] : dish.sides.filter((id) => id !== dish.id && seenIds.has(id));
+  }
   const events = (Array.isArray(raw.events) ? raw.events : [])
     .filter((e) => e && typeof e === 'object' && actions.has(e.action) && Number.isFinite(Number(e.time)))
     .map(cleanEvent);
@@ -122,6 +187,7 @@ export function normalizeState(input) {
     settings: {
       pantryMode: PANTRY_MODES.includes(settings.pantryMode) ? settings.pantryMode : 'lazy',
       variety: VARIETIES.includes(settings.variety) ? settings.variety : 'medium',
+      favoritesAsked: settings.favoritesAsked === true,
     },
     cuisines: cleanCuisines(raw.cuisines),
     deliveries: (Array.isArray(raw.deliveries) ? raw.deliveries : [])
@@ -173,13 +239,20 @@ export function allMains(state) {
 
 // ---- Events -----------------------------------------------------------
 
-/** Appends a card action to the log and applies its effect on the dish. */
-export function logCardAction(state, dishId, action, missing = [], now = Date.now()) {
+/**
+ * Appends a card action to the log and applies its effect on the dish.
+ * A meal (cook, cook anyway, pick) can carry the side it was eaten with:
+ * the side gets the plain "cook" bump, whatever the main got.
+ */
+export function logCardAction(state, dishId, action, missing = [], now = Date.now(), sideId = null) {
   const dish = state.dishes.find((d) => d.id === dishId);
   if (!dish) return null;
   const event = { dishId, action, time: now, missing: cleanNames(missing) };
+  const side = sideId && isEaten(event) ? state.dishes.find((d) => d.id === sideId && d.id !== dishId) : null;
+  if (side) event.sideId = side.id;
   state.events.push(event);
   dish.liking = applyLiking(dish.liking, action);
+  if (side) side.liking = applyLiking(side.liking, ACTIONS.COOK);
   markMissing(state, event.missing);
   return event;
 }
@@ -188,11 +261,14 @@ export function logCardAction(state, dishId, action, missing = [], now = Date.no
  * What a card action is about to change, so undoCardAction() can revert
  * exactly that and nothing else. Call it BEFORE logCardAction().
  */
-export function planUndo(state, dishId, missing = []) {
+export function planUndo(state, dishId, missing = [], sideId = null) {
   const names = cleanNames(missing);
+  const side = sideId ? state.dishes.find((d) => d.id === sideId) : null;
   return {
     dishId,
     liking: state.dishes.find((d) => d.id === dishId)?.liking ?? 0,
+    sideId: side?.id ?? null,
+    sideLiking: side?.liking ?? 0,
     added: names.filter((n) => !state.missing.includes(n)), // newly put on the shopping list
     unstocked: names.filter((n) => state.inStock.includes(n)), // taken out of the manual pantry
   };
@@ -207,6 +283,8 @@ export function undoCardAction(state, event, plan) {
   state.events = state.events.filter((e) => e !== event);
   const dish = state.dishes.find((d) => d.id === plan.dishId);
   if (dish) dish.liking = plan.liking;
+  const side = plan.sideId ? state.dishes.find((d) => d.id === plan.sideId) : null;
+  if (side) side.liking = plan.sideLiking;
   state.missing = state.missing.filter((n) => !plan.added.includes(n));
   for (const n of plan.unstocked) {
     if (!state.inStock.includes(n)) state.inStock.push(n);
@@ -228,4 +306,40 @@ export function logAfterMeal(state, mealEvent, { missing = [], verdict = null } 
   if (dish && verdict) dish.yum = applyYum(dish.yum, verdict === 'up');
   markMissing(state, event.missing);
   return event;
+}
+
+// ---- Favourites -------------------------------------------------------
+
+export const favoriteCount = (state) => state.dishes.filter((d) => d.favorite).length;
+
+/** Stars or unstars a dish. Returns false (and changes nothing) when starring would go over FAVORITES_MAX. */
+export function toggleFavorite(state, dishId) {
+  const dish = state.dishes.find((d) => d.id === dishId);
+  if (!dish) return false;
+  if (!dish.favorite && favoriteCount(state) >= FAVORITES_MAX) return false;
+  dish.favorite = !dish.favorite;
+  return true;
+}
+
+/** The answer to "choose your favourites": exactly these dishes (up to FAVORITES_MAX) are favourites. */
+export function setFavorites(state, ids) {
+  const chosen = new Set([...ids].slice(0, FAVORITES_MAX));
+  for (const dish of state.dishes) dish.favorite = chosen.has(dish.id);
+  state.settings.favoritesAsked = true;
+}
+
+// ---- Mains and sides --------------------------------------------------
+
+/**
+ * Splits the ingredients marked missing between a main and its side. An
+ * ingredient in both counts as the main's. Used to tell "the side is the
+ * problem, change it" apart from "the main can't be made tonight".
+ */
+export function splitMissing(main, side, names) {
+  const ofMain = new Set(main.ingredients);
+  const clean = cleanNames(names);
+  return {
+    main: clean.filter((n) => ofMain.has(n)),
+    side: side ? clean.filter((n) => !ofMain.has(n)) : [],
+  };
 }

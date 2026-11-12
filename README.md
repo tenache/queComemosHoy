@@ -6,10 +6,12 @@ Seguro que te pasó: estás en la tuya, trabajando, estudiando, o viendo Tik Tok
 
 ## La app (v1)
 
-Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en el navegador, se puede instalar en la pantalla de inicio y funciona sin conexión. Ya trae unas 30 comidas caseras, así que no hay que cargar nada para empezar.
+Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en el navegador, se puede instalar en la pantalla de inicio y funciona sin conexión. Ya trae unas 40 comidas caseras y 9 acompañamientos, así que no hay que cargar nada para empezar.
 
 - **Una tarjeta por vez.** Deslizá a la derecha (👉) si la cocinás, a la izquierda (👈) si hoy no, o tocá 🛒 si te falta algún ingrediente.
-- **O elegí vos.** Con "Elegir de la lista" ves todas las comidas y anotás la que quieras.
+- **Plato y acompañamiento.** La tarjeta muestra el plato con un acompañamiento sugerido ("Milanesas · Con: puré"). Tocalo para cambiarlo. Si lo que querés es el acompañamiento, fijalo con 📌 y las tarjetas siguientes son platos que van con eso.
+- **O elegí vos.** Con "Elegir de la lista" ves todas las comidas y anotás la que quieras, o fijás primero el acompañamiento.
+- **Tus favoritas.** Al empezar elegís hasta 5 comidas favoritas (⭐), que salen un poco más seguido. Se cambian en Comidas.
 - **Ruleta del delivery.** Para las noches de pedir: girás y sale una cocina (china, pizza, sushi…) o "¿Y si cocinamos?". Esa porción crece cuando venís pidiendo mucho y se achica si hace rato que no pedís o es fin de semana.
 - **Aprende de lo que elegís.** Lo que cocinás sube, lo que rechazás baja, y nada desaparece salvo que marques "No mostrar nunca": hasta la comida menos querida vuelve a salir cada tanto.
 - **No repite.** Baja las comidas que comiste hace poco y las que comparten ingrediente principal con lo de ayer.

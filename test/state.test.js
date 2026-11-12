@@ -18,6 +18,7 @@ import {
   undoCardAction,
 } from '../js/state.js';
 import { STORAGE_KEY, loadState, readBackup, saveState } from '../js/storage.js';
+import { NEW_IN_V3 } from '../js/dishes.js';
 
 const NOW = Date.UTC(2026, 10, 10, 20, 0, 0);
 
@@ -185,7 +186,9 @@ test('normalizeState: a saved state survives a round trip through JSON', () => {
   const state = defaultState();
   const meal = logCardAction(state, 'lentejas', ACTIONS.COOK_ANYWAY, ['papa'], NOW);
   logAfterMeal(state, meal, { verdict: 'down' }, NOW + 1);
-  state.settings = { pantryMode: 'manual', variety: 'high' };
+  logCardAction(state, 'milanesas-pure', ACTIONS.COOK, [], NOW + 2, 'pure');
+  state.dishes.find((d) => d.id === 'salchichas').favorite = true;
+  state.settings = { pantryMode: 'manual', variety: 'high', favoritesAsked: true };
   assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))), state);
 });
 
@@ -202,8 +205,10 @@ test('normalizeState: repairs bad values and rejects what it cannot use', () => 
     missing: ['Pan', 'pan', ''],
     settings: { pantryMode: 'weird', variety: 'high' },
   });
-  assert.equal(fixed.dishes.length, 1);
-  assert.deepEqual(fixed.dishes[0], {
+  // v1 data is migrated all the way, so the dishes v3 adds are there too.
+  const mine = fixed.dishes.filter((d) => !NEW_IN_V3.includes(d.id));
+  assert.equal(mine.length, 1);
+  assert.deepEqual(mine[0], {
     id: 'a',
     name: 'Sopa',
     emoji: '🍽️',
@@ -214,10 +219,13 @@ test('normalizeState: repairs bad values and rejects what it cannot use', () => 
     yum: 3,
     liking: -2,
     neverShow: false,
+    role: 'main',
+    sides: [],
+    favorite: false,
   });
   assert.deepEqual(fixed.events, [{ dishId: 'a', action: 'cook', time: NOW, missing: [] }]);
   assert.deepEqual(fixed.missing, ['pan']);
-  assert.deepEqual(fixed.settings, { pantryMode: 'lazy', variety: 'high' });
+  assert.deepEqual(fixed.settings, { pantryMode: 'lazy', variety: 'high', favoritesAsked: false });
 
   for (const bad of [null, [], 'x', {}, { schemaVersion: 1 }, { schemaVersion: 0, dishes: [] }]) {
     assert.throws(() => normalizeState(bad));

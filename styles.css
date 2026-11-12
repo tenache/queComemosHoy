@@ -927,3 +927,102 @@ input[type='number'] {
     transition: none !important;
   }
 }
+
+/* ---- Mains and sides (issue #6) ---- */
+
+.side-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.side-row .label {
+  margin: 0;
+}
+
+.side-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--chip);
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.side-chip .caret {
+  color: var(--muted);
+  font-size: 0.8em;
+}
+
+.pin {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  font-size: 18px;
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+.pin[aria-pressed='true'] {
+  filter: none;
+  opacity: 1;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+
+.pin-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.fav {
+  font-size: 0.8em;
+}
+
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.list-item .list-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.star {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: none;
+  font-size: 22px;
+  color: var(--muted);
+}
+
+.list-heading {
+  font-size: 1.1rem;
+  margin-top: 8px;
+}
+
+.list-row[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
