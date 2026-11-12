@@ -3,11 +3,17 @@
 
 import { NEW_IN_V3, SPLIT_IN_V3, STARTER_DISHES } from './dishes.js';
 import { ACTIONS, FAVORITES_MAX, LIKING, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
+import { FOODS } from './nutrition.js';
 import { DEFAULT_CUISINES, cleanCuisine, cleanCuisines } from './wheel.js';
 
 // 1: the v1 app. 2: adds the delivery wheel (`cuisines`, `deliveries`).
 // 3: mains and sides (`role`, `sides`, `sideId` on meals) and favourites.
-export const SCHEMA_VERSION = 3;
+// 4: recipes the user wrote (`recipe` on a dish) and the portions setting.
+export const SCHEMA_VERSION = 4;
+export const PORTIONS = { min: 1, max: 12, default: 2 };
+const MAX_RECIPE_ITEMS = 40;
+const MAX_RECIPE_STEPS = 30;
+const MAX_TEXT = 300;
 export const ROLES = ['main', 'side'];
 export const PANTRY_MODES = ['lazy', 'manual'];
 export const VARIETIES = ['low', 'medium', 'high'];
@@ -23,7 +29,7 @@ export function defaultState() {
     missing: [], // the shopping list: ingredients marked missing
     inStock: [], // manual pantry mode: ingredients the user says they have
     // favoritesAsked: the "choose your favourites" question was answered or skipped.
-    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false },
+    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default },
     cuisines: [...DEFAULT_CUISINES], // the delivery wheel's slices
     deliveries: [], // {time, cuisine | null, manual?: true}
   };
@@ -60,7 +66,36 @@ export function cleanDish(raw) {
     role: ROLES.includes(raw.role) ? raw.role : 'main',
     sides: cleanIds(raw.sides),
     favorite: raw.favorite === true,
+    ...withRecipe(cleanRecipe(raw.recipe)),
   };
+}
+
+// Only a dish with a recipe of its own carries the key, so starter dishes stay as they are.
+const withRecipe = (recipe) => (recipe ? { recipe } : {});
+
+const cleanText = (value) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT);
+
+/**
+ * A recipe the user wrote: {serves, items: [{text, grams?, food?, each?}], steps: [text]}.
+ * Null when there is none (starter dishes show theirs from recipes.js).
+ */
+export function cleanRecipe(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const items = (Array.isArray(raw.items) ? raw.items : [])
+    .filter((i) => i && typeof i === 'object' && cleanText(i.text))
+    .slice(0, MAX_RECIPE_ITEMS)
+    .map((i) => {
+      const item = { text: cleanText(i.text) };
+      const grams = Number(i.grams);
+      if (Number.isFinite(grams) && grams > 0) item.grams = Math.min(Math.round(grams), 100000);
+      if (typeof i.food === 'string' && Object.hasOwn(FOODS, i.food)) item.food = i.food;
+      const each = Number(i.each);
+      if (item.grams && Number.isFinite(each) && each > 0) item.each = each;
+      return item;
+    });
+  const steps = (Array.isArray(raw.steps) ? raw.steps : []).map(cleanText).filter(Boolean).slice(0, MAX_RECIPE_STEPS);
+  if (items.length === 0 && steps.length === 0) return null;
+  return { serves: Math.round(cleanNumber(raw.serves, PORTIONS.min, PORTIONS.max, PORTIONS.default)), items, steps };
 }
 
 /** Distinct non-empty ids, in order. */
@@ -99,6 +134,8 @@ function migrate(raw) {
     blob.schemaVersion = 2;
   }
   if (blob.schemaVersion === 2) migrateToV3(blob);
+  // v4 only adds optional fields (`recipe`, `settings.portions`): normalizeState fills them in.
+  if (blob.schemaVersion === 3) blob.schemaVersion = 4;
   return blob;
 }
 
@@ -188,6 +225,7 @@ export function normalizeState(input) {
       pantryMode: PANTRY_MODES.includes(settings.pantryMode) ? settings.pantryMode : 'lazy',
       variety: VARIETIES.includes(settings.variety) ? settings.variety : 'medium',
       favoritesAsked: settings.favoritesAsked === true,
+      portions: Math.round(cleanNumber(settings.portions, PORTIONS.min, PORTIONS.max, PORTIONS.default)),
     },
     cuisines: cleanCuisines(raw.cuisines),
     deliveries: (Array.isArray(raw.deliveries) ? raw.deliveries : [])

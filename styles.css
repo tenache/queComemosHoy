@@ -1026,3 +1026,141 @@ input[type='number'] {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, var(--surface));
 }
+
+/* ---- Recipes and macros (issue #6) ---- */
+
+textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font: inherit;
+  color: inherit;
+  resize: vertical;
+}
+
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.macros-short {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.portions-row {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.portions-row .label {
+  margin: 0;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.stepper button {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  font-size: 1.2rem;
+  color: var(--text);
+}
+
+.stepper button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.stepper span {
+  min-width: 64px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.recipe {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.recipe-title {
+  font-size: 1.1rem;
+}
+
+.recipe-items {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.recipe-items li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.recipe-items .amount {
+  flex: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.recipe-steps {
+  padding-left: 1.3em;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.macros {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.macro-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.macro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 2px;
+  border-radius: 12px;
+  background: var(--chip);
+}
+
+.macro-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.macro-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
