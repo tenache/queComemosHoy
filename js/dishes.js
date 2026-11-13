@@ -11,7 +11,7 @@
 // time: pollo al horno takes an hour but is 1, empanadas are 5.
 
 // prettier-ignore
-const EFFORT = {
+const STARTER_EFFORT = {
   'fideos-huevo': 2, 'tortilla-papas': 4, 'milanesas-berenjena': 4, 'pollo-curry': 3, 'sopa-pollo': 2,
   lentejas: 2, 'pato-naranja': 4, 'milanesas-pure': 4, 'ravioles-tuco': 2, noquis: 2, 'arroz-atun': 1,
   'tarta-jamon-queso': 2, 'tarta-acelga': 3, 'empanadas-carne': 5, pizza: 4, 'polenta-tuco': 2,
@@ -33,7 +33,7 @@ const dish = (role, id, name, emoji, cookMinutes, health, yum, mains, ingredient
   ingredients,
   mains,
   cookMinutes,
-  effort: EFFORT[id],
+  effort: STARTER_EFFORT[id],
   health,
   yum,
   liking: 0,
@@ -114,7 +114,7 @@ export const SPLIT_IN_V3 = {
 };
 
 /** The starter effort of a dish id, or undefined for the user's own dishes. */
-export const starterEffort = (id) => EFFORT[id];
+export const starterEffort = (id) => STARTER_EFFORT[id];
 
 /** Starter dishes that v3 adds to existing data. */
 export const NEW_IN_V3 = [
