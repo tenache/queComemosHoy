@@ -54,6 +54,13 @@ export const FLOOR = { fairShareFraction: 1 / 8, swipeWindowDays: 4 };
 // Softmax temperature per "variety" setting.
 export const TEMPERATURE = { low: 0.7, medium: 1.0, high: 1.5 };
 
+// The cook's mood today (#21): "¿Cómo está nuestro cocinero hoy?", asked once a
+// day. Four answers make one weight count `boost` times as much; 'different'
+// multiplies the temperature by `variety` (more variety); 'usual' changes nothing.
+export const MOOD = { boost: 2, variety: 1.5 };
+const MOOD_WEIGHT = { lazy: 'effort', rushed: 'cookTime', yum: 'yum', healthy: 'health' };
+export const MOOD_IDS = ['lazy', 'rushed', 'yum', 'healthy', 'different', 'usual'];
+
 // After-meal question: asked from cookMinutes + delay after a meal, and
 // dropped once the meal is too old to remember.
 export const AFTER_MEAL = { delayMinutes: 60, maxAgeHours: 48 };
@@ -162,11 +169,12 @@ export function mealEffort(main, dishes, pinnedSideId = null) {
  *   isMissing:    (ingredientName) => boolean,
  *   pinnedSideId: the side the user pinned, if any (it is the side that counts for a main's effort),
  *   asSide:       true when the dishes are being scored as sides: each counts alone, without sides of its own,
+ *   mood:         today's answer to the mood question (MOOD_IDS), or null,
  * }
  */
 export function scoreDish(dish, ctx) {
-  const { now, events = [], dishes = [], isMissing = () => false, pinnedSideId = null, asSide = false } = ctx;
-  const W = WEIGHTS;
+  const { now, events = [], dishes = [], isMissing = () => false, pinnedSideId = null, asSide = false, mood = null } = ctx;
+  const W = moodWeights(mood);
   const effort = asSide ? effortOf(dish) : mealEffort(dish, dishes, pinnedSideId);
 
   let score =
@@ -204,6 +212,18 @@ export function scoreDish(dish, ctx) {
   return score;
 }
 
+/** WEIGHTS with today's mood applied: the mood's weight × MOOD.boost. */
+export function moodWeights(mood) {
+  const key = MOOD_WEIGHT[mood];
+  return key ? { ...WEIGHTS, [key]: WEIGHTS[key] * MOOD.boost } : WEIGHTS;
+}
+
+/** Softmax temperature for a variety setting, × MOOD.variety when the cook wants something different. */
+export function temperature(variety, mood = null) {
+  const T = TEMPERATURE[variety] ?? TEMPERATURE.medium;
+  return mood === 'different' ? T * MOOD.variety : T;
+}
+
 /** Ids of the dishes swiped left within FLOOR.swipeWindowDays. */
 function recentlySwiped(events, now) {
   const ids = new Set();
@@ -224,7 +244,7 @@ function recentlySwiped(events, now) {
  * Returns [{dish, score, p, floored}]. "Never show" dishes and ids in `exclude` are left out.
  */
 export function probabilities(dishes, ctx, variety = 'medium', exclude = []) {
-  const T = TEMPERATURE[variety] ?? TEMPERATURE.medium;
+  const T = temperature(variety, ctx.mood);
   const skip = new Set(exclude);
   const candidates = dishes.filter((d) => !d.neverShow && !skip.has(d.id));
   if (candidates.length === 0) return [];

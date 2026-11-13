@@ -8,10 +8,10 @@
 // reads at call time. Every value is checked against PARAMS and clamped, so a
 // typo or a broken params.json can't break the app. Pure: no DOM, no storage.
 
-import { AFTER_MEAL, COOK_LEVEL, FLOOR, LIKING, SIDE_EFFORT, TEMPERATURE, WEIGHTS, YUM } from './scoring.js';
+import { AFTER_MEAL, COOK_LEVEL, FLOOR, LIKING, MOOD, SIDE_EFFORT, TEMPERATURE, WEIGHTS, YUM } from './scoring.js';
 import { WHEEL } from './wheel.js';
 
-const TARGETS = { WEIGHTS, WHEEL, TEMPERATURE, FLOOR, LIKING, YUM, COOK_LEVEL, SIDE_EFFORT, AFTER_MEAL };
+const TARGETS = { WEIGHTS, WHEEL, TEMPERATURE, FLOOR, LIKING, YUM, COOK_LEVEL, SIDE_EFFORT, AFTER_MEAL, MOOD };
 
 // One row per number: [key, group, min, max, step, percent?]. `percent` shows
 // a 0–1 share as 0–100 in the panel. Labels and help are in strings.js under
@@ -38,6 +38,9 @@ const ROWS = [
   ['COOK_LEVEL.minMinutes', 'score', 5, 120, 5],
   ['COOK_LEVEL.maxMinutes', 'score', 10, 600, 5],
 
+  ['MOOD.boost', 'mood', 1, 5, 0.25],
+  ['MOOD.variety', 'mood', 1, 3, 0.1],
+
   ['WEIGHTS.repeat', 'variety', 0, 10, 0.1],
   ['WEIGHTS.repeatFadeDays', 'variety', 0.5, 60, 0.5],
   ['WEIGHTS.fatigue', 'variety', 0, 10, 0.1],
@@ -60,7 +63,7 @@ const ROWS = [
   ['AFTER_MEAL.delayMinutes', 'learning', 0, 600, 5],
 ];
 
-export const PARAM_GROUPS = ['wheel', 'score', 'variety', 'learning'];
+export const PARAM_GROUPS = ['wheel', 'score', 'mood', 'variety', 'learning'];
 export const PARAMS = ROWS.map(([key, group, min, max, step, percent = false]) => ({ key, group, min, max, step, percent }));
 const BY_KEY = new Map(PARAMS.map((p) => [p.key, p]));
 
