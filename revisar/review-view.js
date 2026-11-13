@@ -31,7 +31,7 @@ const byId = new Map(STARTER_DISHES.map((d) => [d.id, d]));
 const queue = reviewQueue(STARTER_DISHES);
 const sideOptions = STARTER_DISHES.filter((d) => d.role === 'side').map((d) => d.id);
 
-const ui = { screen: 'intro', current: null, step: 'tier', picked: null, other: '', noteOpen: false, copied: false };
+const ui = { screen: 'intro', current: null, step: 'tier', picked: null, other: '', noteOpen: false, copied: false, pausedAt: null };
 let review = load();
 
 function load() {
@@ -100,7 +100,9 @@ function goNext({ includeSkipped = false } = {}) {
 function finishDish() {
   save();
   const { done, total } = progress(queue, review, byId);
-  if (done < total && done % PAUSE_EVERY === 0 && ui.screen === 'dish') {
+  // Once per count: changing an earlier answer doesn't raise `done`, so no second "¡Van 10!".
+  if (done < total && done % PAUSE_EVERY === 0 && done !== ui.pausedAt) {
+    ui.pausedAt = done;
     ui.screen = 'pause';
     render();
     return;
@@ -248,11 +250,15 @@ function viewSides(dish) {
       } }, 'Nada, va solo'),
     ),
     h('label', { class: 'rv-other' }, h('span', { class: 'help' }, '¿Otro? Escribilo'),
-      h('input', { type: 'text', value: ui.other, maxLength: 80, oninput: (e) => (ui.other = e.target.value) })),
+      h('input', { type: 'text', value: ui.other, maxLength: 80, oninput: (e) => {
+        ui.other = e.target.value;
+        // No render here (it would drop the keyboard): update the button by hand.
+        document.getElementById('rv-done').disabled = ui.picked === null && !ui.other.trim();
+      } })),
     button('Listo, siguiente', () => {
       setSides(review, dish.id, [...(ui.picked ?? [])], ui.other);
       finishDish();
-    }, 'primary wide', { disabled: ui.picked === null && !ui.other.trim() }),
+    }, 'primary wide', { id: 'rv-done', disabled: ui.picked === null && !ui.other.trim() }),
     h('div', { class: 'rv-row' }, button('← Volver', back, 'ghost small')),
   ];
 }
