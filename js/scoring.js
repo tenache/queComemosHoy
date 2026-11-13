@@ -42,6 +42,11 @@ export const COOK_LEVEL = { minMinutes: 10, maxMinutes: 150 };
 // the total time). Hidden from the user; dishes without one get `default`.
 export const EFFORT = { min: 1, max: 5, default: 3 };
 
+// The side effort that counts for a main with several sides: this quantile of
+// their efforts, interpolated (0.25: the first quartile). The app doesn't
+// always pick the easiest side, so not the lowest (Thomas, 2026-11-13).
+export const SIDE_EFFORT_QUANTILE = 0.25;
+
 // Every dish that can appear keeps a minimum chance: this fraction of a fair
 // share (1/N). A dish swiped left in the last `swipeWindowDays` gets no minimum.
 export const FLOOR = { fairShareFraction: 1 / 8, swipeWindowDays: 4 };
@@ -114,17 +119,28 @@ function sharedMainsShare(dish, other) {
 const effortOf = (dish) => dish.effort ?? EFFORT.default;
 
 /**
+ * The q-quantile of `values` (0…1), interpolating linearly between the two
+ * nearest (like Excel's QUARTILE.INC): 0.25 of [2, 3] is 2.25.
+ */
+export function quantile(values, q) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const at = q * (sorted.length - 1);
+  const below = Math.floor(at);
+  const above = Math.min(below + 1, sorted.length - 1);
+  return sorted[below] + (sorted[above] - sorted[below]) * (at - below);
+}
+
+/**
  * Effort of the side that counts for `main`: the pinned side if it goes with
- * this main, else the second-lowest effort among its sides (the app doesn't
- * always pick the easiest one), or the only one. Null for a complete dish.
+ * this main, else the SIDE_EFFORT_QUANTILE of its sides' efforts, or the only
+ * one. Null for a complete dish.
  */
 export function sideEffort(main, dishes, pinnedSideId = null) {
   const sides = sidesOf(main, dishes);
   const pinned = pinnedSideId && sides.find((d) => d.id === pinnedSideId);
   if (pinned) return effortOf(pinned);
   if (sides.length === 0) return null;
-  const efforts = sides.map(effortOf).sort((a, b) => a - b);
-  return efforts[Math.min(1, efforts.length - 1)];
+  return quantile(sides.map(effortOf), SIDE_EFFORT_QUANTILE);
 }
 
 /**
