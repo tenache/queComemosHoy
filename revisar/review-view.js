@@ -333,6 +333,7 @@ function viewEnd() {
         if (!confirm('¿Borrar todas las respuestas y empezar de nuevo?')) return;
         review = emptyReview();
         save();
+        ui.pausedAt = null;
         ui.screen = 'intro';
         render();
       }, 'ghost small')),
