@@ -111,25 +111,54 @@ function sharedMainsShare(dish, other) {
   return mine.filter((m) => theirs.has(m)).length / mine.length;
 }
 
+const effortOf = (dish) => dish.effort ?? EFFORT.default;
+
+/**
+ * Effort of the side that counts for `main`: the pinned side if it goes with
+ * this main, else the second-lowest effort among its sides (the app doesn't
+ * always pick the easiest one), or the only one. Null for a complete dish.
+ */
+export function sideEffort(main, dishes, pinnedSideId = null) {
+  const sides = sidesOf(main, dishes);
+  const pinned = pinnedSideId && sides.find((d) => d.id === pinnedSideId);
+  if (pinned) return effortOf(pinned);
+  if (sides.length === 0) return null;
+  const efforts = sides.map(effortOf).sort((a, b) => a - b);
+  return efforts[Math.min(1, efforts.length - 1)];
+}
+
+/**
+ * Effort of the meal a main makes. Added in the score's own units (the
+ * penalty grows with effort - 1), so main + side - 1, capped at EFFORT.max:
+ * a side never makes a meal look like less work than its main alone.
+ */
+export function mealEffort(main, dishes, pinnedSideId = null) {
+  const side = main.role === 'side' ? null : sideEffort(main, dishes, pinnedSideId);
+  return side === null ? effortOf(main) : Math.min(EFFORT.max, effortOf(main) + side - 1);
+}
+
 /**
  * Score of one dish.
  * ctx = {
- *   now:       ms timestamp,
- *   events:    [{dishId, action, time, missing[]}],
- *   dishes:    all dishes (to look up the main ingredients of what was eaten),
- *   isMissing: (ingredientName) => boolean,
+ *   now:          ms timestamp,
+ *   events:       [{dishId, action, time, missing[]}],
+ *   dishes:       all dishes (to look up the main ingredients of what was eaten, and a main's sides),
+ *   isMissing:    (ingredientName) => boolean,
+ *   pinnedSideId: the side the user pinned, if any (it is the side that counts for a main's effort),
+ *   asSide:       true when the dishes are being scored as sides: each counts alone, without sides of its own,
  * }
  */
 export function scoreDish(dish, ctx) {
-  const { now, events = [], dishes = [], isMissing = () => false } = ctx;
+  const { now, events = [], dishes = [], isMissing = () => false, pinnedSideId = null, asSide = false } = ctx;
   const W = WEIGHTS;
+  const effort = asSide ? effortOf(dish) : mealEffort(dish, dishes, pinnedSideId);
 
   let score =
     (W.health * (dish.health - 1)) / 4 +
     (W.yum * (dish.yum - 1)) / 4 +
     clamp(Number(dish.liking) || 0, LIKING.min, LIKING.max) +
     (dish.favorite ? W.favorite : 0) -
-    (W.effort * ((dish.effort ?? EFFORT.default) - 1)) / 4 -
+    (W.effort * (effort - 1)) / 4 -
     (W.cookTime * (cookLevel(dish.cookMinutes) - 1)) / 4;
 
   const missingCount = (dish.ingredients ?? []).filter((i) => isMissing(i)).length;
@@ -227,7 +256,8 @@ export function sidesOf(main, dishes) {
 export function pickSide(main, ctx, variety = 'medium', { rng = Math.random, exclude = [] } = {}) {
   const sides = sidesOf(main, ctx.dishes ?? []);
   if (sides.length === 0) return null;
-  return pickDish(sides, ctx, variety, { rng, exclude }) ?? pickDish(sides, ctx, variety, { rng });
+  const sideCtx = { ...ctx, asSide: true };
+  return pickDish(sides, sideCtx, variety, { rng, exclude }) ?? pickDish(sides, sideCtx, variety, { rng });
 }
 
 /** Samples one dish from probabilities(). The only source of randomness. */

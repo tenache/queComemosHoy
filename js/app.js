@@ -178,6 +178,7 @@ function scoringContext() {
     events: state.events,
     dishes: state.dishes,
     isMissing: (name) => isMissing(state, name),
+    pinnedSideId: ui.pinnedSide,
   };
 }
 
@@ -269,7 +270,7 @@ function changeSideForMissing(missing) {
   // Don't offer a side that needs what just ran out (papas fritas after "no hay papa").
   const options = sidesOf(main, state.dishes);
   const blocked = options.filter((d) => d.id === old || d.ingredients.some((i) => missing.includes(i))).map((d) => d.id);
-  ui.sideId = pickDish(options, scoringContext(), state.settings.variety, { exclude: blocked })?.id ?? null;
+  ui.sideId = pickDish(options, { ...scoringContext(), asSide: true }, state.settings.variety, { exclude: blocked })?.id ?? null;
   ui.sideFor = main.id;
   ui.sheet = null;
   commit();
