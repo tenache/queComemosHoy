@@ -62,6 +62,7 @@ HTML, CSS y JavaScript sin framework ni build.
 | `js/nutrition.js` | Calorías y macros por 100 g de unos 60 alimentos (redondeados de USDA FoodData Central), el cálculo por porción y la lectura de las líneas de una receta. Módulo puro. |
 | `js/app.js` | La interfaz. |
 | `sw.js` | El service worker: guarda la app para usarla sin conexión. |
+| `revisar/` | Una página aparte (no es parte de la app ni se instala) para revisar con quien cocina cuánto trabajo da cada comida inicial y con qué se acompaña. Se abre en `/revisar/`. |
 | `test/` | Las pruebas. |
 | `tools/sw-version.js` | Calcula y actualiza `VERSION` en `sw.js`. |
 | `tools/make_icons.py` | Genera los íconos de `icons/`. |
