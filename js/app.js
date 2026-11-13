@@ -1173,13 +1173,13 @@ function overlayPicker() {
         { class: 'chips' },
         pinnable.map((side) => button(`📌 ${side.emoji} ${side.name}`, () => pinFromList(side), 'chip')),
       ),
-    button(
-      t('cancel'),
-      () => {
+    h(
+      'div',
+      { class: 'row sheet-foot' },
+      button(t('cancel'), () => {
         ui.picking = false;
         render();
-      },
-      'sheet-foot',
+      }),
     ),
   );
 }
@@ -1221,13 +1221,13 @@ function overlaySide() {
       }),
       row(null, t('noSide'), null),
     ),
-    button(
-      t('cancel'),
-      () => {
+    h(
+      'div',
+      { class: 'row sheet-foot' },
+      button(t('cancel'), () => {
         ui.sideSheet = null;
         render();
-      },
-      'sheet-foot',
+      }),
     ),
   );
 }
@@ -1337,13 +1337,13 @@ function overlayRecipe() {
     recipeSection(main),
     side && recipeSection(side),
     macrosTable(main, side),
-    button(
-      t('close'),
-      () => {
+    h(
+      'div',
+      { class: 'row sheet-foot' },
+      button(t('close'), () => {
         ui.recipe = null;
         render();
-      },
-      'sheet-foot',
+      }),
     ),
   );
 }
