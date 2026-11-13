@@ -1,7 +1,8 @@
 // UI. All text comes from strings.js, all scoring from scoring.js, all state
 // changes go through state.js and are saved by commit().
 
-import { ACTIONS, FAVORITES_MAX, afterMealDue, mainCandidates, mealMinutes, pickDish, pickSide, sidesOf } from './scoring.js';
+import { ACTIONS, FAVORITES_MAX, afterMealDue, mainCandidates, mealMinutes, pickDish, pickSide, probabilities, sidesOf } from './scoring.js';
+import { PARAMS, PARAM_GROUPS, applyParams, cleanParams, defaultParam, paramSource, paramValue, paramsJson } from './params.js';
 import {
   MAX_MAINS,
   PORTIONS,
@@ -28,6 +29,7 @@ import { recipeFor } from './recipes.js';
 import { STORAGE_KEY, loadState, readBackup, saveState } from './storage.js';
 import { lang, t } from './strings.js';
 import { createWheelView } from './wheel-view.js';
+import { wheelStats } from './wheel.js';
 
 const SWIPE_THRESHOLD = 80; // px
 const FLY_MS = 180;
@@ -35,6 +37,54 @@ const TAP_SLOP = 6; // px: a pointer that moved less than this was a tap
 
 const loaded = loadState();
 let state = loaded.state;
+
+// ---- Tuning (params.js): code ← params.json ← this phone ------------------
+
+const PARAMS_FILE_KEY = 'qch:params-file'; // the last params.json that could be read
+const paramsFile = { values: readCachedParams(), status: null }; // status: null (not yet) | 'ok' | 'error'
+
+function readCachedParams() {
+  try {
+    return cleanParams(JSON.parse(localStorage.getItem(PARAMS_FILE_KEY) ?? '{}'));
+  } catch {
+    return {};
+  }
+}
+
+function applyTuning() {
+  applyParams(paramsFile.values, state.settings.params);
+}
+
+/**
+ * Reads params.json past every cache. When it can't be read (offline, a typo
+ * in the JSON), the last copy that could be read stays in use.
+ */
+async function refreshParamsFile() {
+  let values;
+  try {
+    const response = await fetch('./params.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    values = cleanParams(await response.json());
+  } catch {
+    paramsFile.status = 'error';
+    if (ui.tab === 'settings') render();
+    return;
+  }
+  const changed = JSON.stringify(values) !== JSON.stringify(paramsFile.values);
+  paramsFile.status = 'ok';
+  if (changed) {
+    paramsFile.values = values;
+    try {
+      localStorage.setItem(PARAMS_FILE_KEY, JSON.stringify(values));
+    } catch {
+      // Not saved for offline use; it's read again next time.
+    }
+    applyTuning();
+  }
+  if (changed || ui.tab === 'settings') render();
+}
+
+applyTuning();
 
 const ui = {
   tab: 'today',
@@ -55,6 +105,8 @@ const ui = {
   banners: [], // [{id, text, actionLabel?, action?, sticky?}]
   saveWarned: false,
   installPrompt: null,
+  tuningOpen: false, // the "Ajustes finos" section is expanded
+  tuningCopied: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -987,6 +1039,7 @@ async function importData(file) {
   }
   if (!window.confirm(t('confirmImport', { dishes: state.dishes.length }))) return;
   state = next;
+  applyTuning();
   wheelView.close();
   Object.assign(ui, { currentId: null, cooked: null, sheet: null, picking: false, afterMeal: null, editing: null });
   commit();
@@ -1032,6 +1085,7 @@ function viewSettings() {
     h('h2', { class: 'section' }, t('portions')),
     portionsControl(),
     h('p', { class: 'help' }, t('portionsHelp')),
+    tuningSection(),
     h('h2', { class: 'section' }, t('backup')),
     h('p', { class: 'help' }, t('backupHelp')),
     h('div', { class: 'row' }, button(t('exportData'), exportData), button(t('importData'), () => fileInput.click())),
@@ -1056,6 +1110,120 @@ function viewSettings() {
       ),
     ],
   ];
+}
+
+// ---- Ajustes finos --------------------------------------------------------
+
+const roundShown = (value) => String(Number(value.toFixed(4)));
+
+/** One tuning number: label, help, the field, and its default (with a reset when this phone changed it). */
+function tuningRow(p) {
+  const scale = p.percent ? 100 : 1;
+  const shown = (value) => roundShown(value * scale);
+  const label = t(`param:${p.key}`);
+  const setPhone = (value) => {
+    if (value === null) delete state.settings.params[p.key];
+    else state.settings.params[p.key] = value;
+    state.settings.params = cleanParams(state.settings.params);
+    ui.tuningCopied = false;
+    applyTuning();
+    commit();
+  };
+  const input = h('input', {
+    type: 'number',
+    inputMode: 'decimal',
+    min: String(p.min * scale),
+    max: String(p.max * scale),
+    step: String(p.step * scale),
+    value: shown(paramValue(p.key)),
+    'aria-label': label,
+    onchange: (e) => {
+      const text = String(e.target.value).trim().replace(',', '.');
+      const n = Number(text);
+      setPhone(text === '' || !Number.isFinite(n) ? null : n / scale);
+    },
+  });
+  const changed = paramSource(p.key) === 'phone';
+  const fallback = t('tuningDefault', { value: shown(defaultParam(p.key)) });
+  return h(
+    'div',
+    { class: `tuning-row${changed ? ' changed' : ''}` },
+    h('div', { class: 'tuning-text' }, h('strong', null, label), h('span', { class: 'help' }, t(`paramHelp:${p.key}`))),
+    input,
+    h(
+      'p',
+      { class: 'help tuning-default' },
+      changed ? `${t('tuningChanged')} · ${fallback}` : fallback,
+      !changed && paramSource(p.key) === 'file' && ` ${t('tuningFromFile')}`,
+      changed && button('↺', () => setPhone(null), 'small ghost', { 'aria-label': t('tuningReset'), title: t('tuningReset') }),
+    ),
+  );
+}
+
+/** What the numbers do right now: the wheel's cook share today and the most likely dishes. */
+function tuningPreview() {
+  const cook = wheelStats(state.deliveries, Date.now()).cook;
+  const top = probabilities(mainCandidates(state.dishes), scoringContext(), state.settings.variety)
+    .sort((a, b) => b.p - a.p)
+    .slice(0, 5)
+    .map((r) => `${r.dish.name} ${Math.round(r.p * 100)}%`);
+  return h(
+    'div',
+    { class: 'tuning-preview' },
+    h('p', { class: 'label' }, t('tuningPreview')),
+    h('p', null, t('tuningWheelNow', { pct: Math.round(cook * 100) })),
+    top.length > 0 && h('p', null, t('tuningTopDishes', { list: top.join(', ') })),
+  );
+}
+
+function tuningSection() {
+  const mine = Object.keys(state.settings.params).length > 0;
+  const json = paramsJson(state.settings.params);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(json);
+      ui.tuningCopied = true;
+      render();
+    } catch {
+      // No clipboard: the text is shown above to copy by hand.
+    }
+  };
+  const fileStatus = { ok: 'tuningFileOk', error: 'tuningFileError' }[paramsFile.status];
+  return h(
+    'details',
+    {
+      class: 'tuning',
+      open: ui.tuningOpen,
+      ontoggle: (e) => {
+        ui.tuningOpen = e.target.open;
+      },
+    },
+    h('summary', { class: 'section' }, t('tuningTitle')),
+    h('p', { class: 'help' }, t('tuningHelp')),
+    fileStatus && h('p', { class: 'help' }, t(fileStatus)),
+    tuningPreview(),
+    PARAM_GROUPS.map((group) => [
+      h('h3', { class: 'tuning-group' }, t(`tuningGroup:${group}`)),
+      PARAMS.filter((p) => p.group === group).map(tuningRow),
+    ]),
+    h('h3', { class: 'tuning-group' }, t('tuningCopy')),
+    mine
+      ? [
+          h('p', { class: 'help' }, t('tuningCopyHelp')),
+          h('textarea', { class: 'tuning-json', rows: Math.min(12, json.split('\n').length), readOnly: true, value: json }),
+          h(
+            'div',
+            { class: 'row' },
+            button(ui.tuningCopied ? t('tuningCopied') : t('tuningCopy'), copy, 'primary'),
+            button(t('tuningResetAll'), () => {
+              state.settings.params = {};
+              applyTuning();
+              commit();
+            }),
+          ),
+        ]
+      : h('p', { class: 'help' }, t('tuningNone')),
+  );
 }
 
 // ---- Overlays -----------------------------------------------------------
@@ -1586,6 +1754,7 @@ window.addEventListener('storage', (e) => {
   if (e.key !== STORAGE_KEY && e.key !== null) return;
   const reloaded = loadState();
   state = reloaded.state;
+  applyTuning();
   reportLoadProblem(reloaded);
   // These hold objects from the old state. An open dish form keeps what was typed.
   ui.cooked = null;
@@ -1603,6 +1772,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
+  refreshParamsFile();
   const before = ui.afterMeal;
   checkAfterMeal();
   if (ui.afterMeal !== before) render();
@@ -1626,3 +1796,4 @@ document.addEventListener('keydown', (e) => {
 checkAfterMeal();
 render();
 watchServiceWorker();
+refreshParamsFile();
