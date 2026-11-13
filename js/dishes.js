@@ -6,6 +6,26 @@
 // only ever goes with a main). A main lists the dishes that go with it in
 // `sides`, by id; an empty list means it is a complete meal on its own.
 // `sides` may point at another main too: milanesas go with ravioles con tuco.
+//
+// `effort` (1–5, hidden from the user) is the hands-on work, not the total
+// time: pollo al horno takes an hour but is 1, empanadas are 5. A main's effort
+// is the main alone; its side has its own. Some ids still name the v2 side
+// (`merluza-ensalada` is just "Merluza al horno", see SPLIT_IN_V3). A dish that
+// includes another one's work (curry with its rice) is never below that dish.
+
+// prettier-ignore
+const STARTER_EFFORT = {
+  'fideos-huevo': 2, 'tortilla-papas': 4, 'milanesas-berenjena': 4, 'pollo-curry': 3, 'sopa-pollo': 2,
+  lentejas: 2, 'pato-naranja': 4, 'milanesas-pure': 4, 'ravioles-tuco': 2, noquis: 2, 'arroz-atun': 1,
+  'tarta-jamon-queso': 2, 'tarta-acelga': 3, 'empanadas-carne': 5, pizza: 4, 'polenta-tuco': 2,
+  'guiso-fideos': 3, 'pollo-horno-papas': 1, 'ensalada-completa': 2, 'revuelto-zapallitos': 2,
+  hamburguesas: 3, 'fajitas-pollo': 3, 'merluza-ensalada': 1, paella: 4, gazpacho: 2,
+  'garbanzos-espinaca': 2, tostado: 1, omelette: 1, 'wok-verduras': 3, asado: 4, 'cerdo-batatas': 1,
+  'zapallitos-rellenos': 4, 'croquetas-arroz': 4, salchichas: 1, 'patitas-pollo': 1, 'huevos-fritos': 1,
+  'bife-plancha': 1, 'pechuga-plancha': 1, 'fideos-manteca': 1,
+  pure: 3, 'pure-calabaza': 3, 'ensalada-mixta': 2, 'ensalada-tomate': 1, 'papas-fritas': 3,
+  'papas-horno': 2, 'batatas-horno': 1, 'arroz-blanco': 1, 'verduras-vapor': 2,
+};
 
 const dish = (role, id, name, emoji, cookMinutes, health, yum, mains, ingredients, sides = []) => ({
   id,
@@ -16,6 +36,7 @@ const dish = (role, id, name, emoji, cookMinutes, health, yum, mains, ingredient
   ingredients,
   mains,
   cookMinutes,
+  effort: STARTER_EFFORT[id],
   health,
   yum,
   liking: 0,
@@ -94,6 +115,9 @@ export const SPLIT_IN_V3 = {
   'pollo-horno-papas': { oldName: 'Pollo al horno con papas', sideId: 'papas-horno' },
   'cerdo-batatas': { oldName: 'Bondiola de cerdo con batatas', sideId: 'batatas-horno' },
 };
+
+/** The starter effort of a dish id, or undefined for the user's own dishes. */
+export const starterEffort = (id) => STARTER_EFFORT[id];
 
 /** Starter dishes that v3 adds to existing data. */
 export const NEW_IN_V3 = [

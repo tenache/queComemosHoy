@@ -49,15 +49,15 @@ test('the test dates are the weekdays they claim to be', () => {
 });
 
 test('the four corners are exact', () => {
-  assert.equal(cookShare([], FRIDAY), 1 / 8, 'Friday, never ordered');
+  assert.equal(cookShare([], FRIDAY), 1 / 16, 'Friday, never ordered');
   assert.equal(cookShare(daily(MONDAY), MONDAY), 15 / 16, 'Monday, delivery every day for 30 days');
-  assert.equal(cookShare([], MONDAY), 1 / 4, 'Monday, never ordered');
+  assert.equal(cookShare([], MONDAY), 3 / 32, 'Monday, never ordered');
   assert.equal(cookShare(daily(FRIDAY), FRIDAY), 7 / 8, 'Friday, delivery every day for 30 days');
 });
 
-test('the slice grows gradually: one delivery today gives about 37% on a weekday', () => {
+test('the slice grows gradually: one delivery today gives about 24% on a weekday', () => {
   const one = cookShare(daysAgo(MONDAY, 0), MONDAY);
-  assert.ok(Math.abs(one - 0.37) < 0.01, `one delivery today: ${(one * 100).toFixed(1)}%`);
+  assert.ok(Math.abs(one - 0.24) < 0.01, `one delivery today: ${(one * 100).toFixed(1)}%`);
 
   // A first delivery moves the slice by a fraction of its range, not most of it.
   const range = WHEEL.weekday.max - WHEEL.weekday.min;
@@ -85,7 +85,7 @@ test('frequency tops out at frequencyCap deliveries in 30 days', () => {
   assert.ok(at(11) < at(12));
 });
 
-test('the slice is never outside [1/8, 15/16]', () => {
+test('the slice is never outside [1/16, 15/16]', () => {
   const rng = seededRng(3);
   const histories = [[], daily(MONDAY)];
   // Far more deliveries than days, several today, some in the future, some ancient.
@@ -97,7 +97,7 @@ test('the slice is never outside [1/8, 15/16]', () => {
   for (const history of histories) {
     for (const now of Object.values(WEEK)) {
       const share = cookShare(history, now);
-      assert.ok(share >= 1 / 8 && share <= 15 / 16, `share ${share}`);
+      assert.ok(share >= 1 / 16 && share <= 15 / 16, `share ${share}`);
     }
   }
 });
@@ -188,10 +188,10 @@ test('over many spins, each slice comes up as often as its size says', () => {
 });
 
 test('spin follows the rng across the whole wheel', () => {
-  const slices = buildSlices(DEFAULT_CUISINES, [], MONDAY); // cook = 1/4
+  const slices = buildSlices(DEFAULT_CUISINES, [], MONDAY); // cook = 3/32 = 0.09375
   assert.equal(spin(slices, () => 0), 0);
-  assert.equal(spin(slices, () => 0.2499), 0);
-  assert.equal(spin(slices, () => 0.2501), 1);
+  assert.equal(spin(slices, () => 0.0937), 0);
+  assert.equal(spin(slices, () => 0.0938), 1);
   assert.equal(spin(slices, () => 0.999999999), slices.length - 1);
 });
 

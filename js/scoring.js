@@ -4,7 +4,8 @@
 export const WEIGHTS = {
   health: 1.0, // × (health - 1) / 4
   yum: 1.5, // × (yum - 1) / 4
-  cookTimePerHour: 0.8, // × cookMinutes / 60
+  effort: 1.25, // × (effort - 1) / 4: hands-on work in the kitchen, hidden from the user
+  cookTime: 1.5, // × (cookLevel(cookMinutes) - 1) / 4
   missingIngredient: 0.6, // per ingredient missing right now
   notTonight: 2.0, // per left swipe, × exp(-days / notTonightFadeDays)
   notTonightFadeDays: 1.5,
@@ -31,6 +32,15 @@ export const LIKING = {
 };
 
 export const YUM = { min: 1, max: 5, step: 0.25 };
+
+// Cooking time on a 1–5 scale for the score: level 1 at `minMinutes` or less,
+// level 5 at `maxMinutes` or more, logarithmic in between, so each level about
+// doubles the time (20 min ≈ 2, 40 ≈ 3, 75 ≈ 4). Cards still show minutes.
+export const COOK_LEVEL = { minMinutes: 10, maxMinutes: 150 };
+
+// Effort: 1–5, how much of the cooking time someone is actually working (not
+// the total time). Hidden from the user; dishes without one get `default`.
+export const EFFORT = { min: 1, max: 5, default: 3 };
 
 // Every dish that can appear keeps a minimum chance: this fraction of a fair
 // share (1/N). A dish swiped left in the last `swipeWindowDays` gets no minimum.
@@ -76,6 +86,13 @@ function daysSince(time, now) {
   return Math.max(0, (now - time) / DAY_MS);
 }
 
+/** Cooking time on the 1–5 scale of COOK_LEVEL. */
+export function cookLevel(minutes) {
+  const { minMinutes, maxMinutes } = COOK_LEVEL;
+  const m = clamp(Number(minutes) || 0, minMinutes, maxMinutes);
+  return 1 + (4 * Math.log(m / minMinutes)) / Math.log(maxMinutes / minMinutes);
+}
+
 /** New liking after a card action. Unknown actions leave it unchanged. */
 export function applyLiking(liking, action) {
   const delta = LIKING[action] ?? 0;
@@ -112,7 +129,8 @@ export function scoreDish(dish, ctx) {
     (W.yum * (dish.yum - 1)) / 4 +
     clamp(Number(dish.liking) || 0, LIKING.min, LIKING.max) +
     (dish.favorite ? W.favorite : 0) -
-    (W.cookTimePerHour * dish.cookMinutes) / 60;
+    (W.effort * ((dish.effort ?? EFFORT.default) - 1)) / 4 -
+    (W.cookTime * (cookLevel(dish.cookMinutes) - 1)) / 4;
 
   const missingCount = (dish.ingredients ?? []).filter((i) => isMissing(i)).length;
   score -= W.missingIngredient * missingCount;

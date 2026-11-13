@@ -833,6 +833,7 @@ function viewDishForm() {
       ingredients: splitList(ingredients.value),
       mains: mainsList,
       cookMinutes: minutesValue,
+      effort: original?.effort, // hidden: an edit keeps it, a new dish gets the default
       health: keep('health'),
       yum: keep('yum'),
       liking: original?.liking ?? 0,

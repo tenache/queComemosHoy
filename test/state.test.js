@@ -215,6 +215,7 @@ test('normalizeState: repairs bad values and rejects what it cannot use', () => 
     ingredients: [],
     mains: ['a', 'b', 'c'],
     cookMinutes: 0,
+    effort: 3,
     health: 5,
     yum: 3,
     liking: -2,
