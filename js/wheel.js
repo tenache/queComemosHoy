@@ -4,8 +4,9 @@
 
 export const WHEEL = {
   // Size of the "cook instead" slice at pressure 0 (min) and pressure 1 (max).
-  weekday: { min: 1 / 4, max: 15 / 16 }, // Monday to Thursday
-  weekend: { min: 1 / 8, max: 7 / 8 }, // Friday to Sunday
+  // The minimums are for someone who has never ordered (Thomas, 2026-11-13).
+  weekday: { min: 3 / 32, max: 15 / 16 }, // Monday to Thursday
+  weekend: { min: 1 / 16, max: 7 / 8 }, // Friday to Sunday
   weekendDays: [5, 6, 0], // Date.getDay(): Friday, Saturday, Sunday
 
   // pressure = (recencyWeight · recency + frequencyWeight · frequency) ^ pressureExponent

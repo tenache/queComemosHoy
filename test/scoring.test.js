@@ -80,13 +80,14 @@ test('no bans: at the lowest liking and lowest variety a dish keeps an eighth of
     for (const row of probabilities(dishes, c, 'low')) assert.ok(row.p >= floor, `${name}: ${row.dish.id} keeps the floor`);
   }
 
-  // And the sampler delivers it: about 20000 / 256 = 78 picks expected from the floor alone.
+  // And the sampler delivers it: 20000 × floor picks expected from the floor alone
+  // (52 with 48 starter dishes). Allow for sampling noise, well above zero.
   const rng = seededRng(1);
   let hits = 0;
   for (let i = 0; i < 20000; i++) {
     if (pickDish(dishes, ctx([], { dishes }), 'low', { rng }).id === DISLIKED) hits++;
   }
-  assert.ok(hits >= 50, `picked ${hits} times in 20000`);
+  assert.ok(hits >= 20000 * floor * 0.7, `picked ${hits} times in 20000`);
 });
 
 test('no bans: a dish swiped left in the last 4 days gets no floor, then gets it back', () => {
@@ -292,7 +293,7 @@ test('starter dishes: about 30 to 40 mains plus sides, valid, and include the on
     assert.ok(d.mains.length >= 1 && d.mains.length <= 3, `${d.id} has 1 to 3 mains`);
     assert.ok(!d.mains.some((m) => staples.includes(m)), `${d.id} does not tag staples`);
     assert.ok(d.ingredients.length >= 1, `${d.id} has ingredients`);
-    for (const key of ['health', 'yum']) assert.ok(d[key] >= 1 && d[key] <= 5, `${d.id} ${key} is 1 to 5`);
+    for (const key of ['health', 'yum', 'effort']) assert.ok(d[key] >= 1 && d[key] <= 5, `${d.id} ${key} is 1 to 5`);
     assert.ok(d.cookMinutes > 0);
   }
 

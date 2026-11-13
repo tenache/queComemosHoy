@@ -1,15 +1,16 @@
 // The app's state as one versioned JSON object, plus pure helpers that change
 // it. No DOM and no storage here, so `node --test` can cover it.
 
-import { NEW_IN_V3, SPLIT_IN_V3, STARTER_DISHES } from './dishes.js';
-import { ACTIONS, FAVORITES_MAX, LIKING, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
+import { NEW_IN_V3, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
+import { ACTIONS, EFFORT, FAVORITES_MAX, LIKING, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
 import { FOODS } from './nutrition.js';
 import { DEFAULT_CUISINES, cleanCuisine, cleanCuisines } from './wheel.js';
 
 // 1: the v1 app. 2: adds the delivery wheel (`cuisines`, `deliveries`).
 // 3: mains and sides (`role`, `sides`, `sideId` on meals) and favourites.
 // 4: recipes the user wrote (`recipe` on a dish) and the portions setting.
-export const SCHEMA_VERSION = 4;
+// 5: `effort` on a dish (hidden from the user).
+export const SCHEMA_VERSION = 5;
 export const PORTIONS = { min: 1, max: 12, default: 2 };
 const MAX_RECIPE_ITEMS = 40;
 const MAX_RECIPE_STEPS = 30;
@@ -59,6 +60,7 @@ export function cleanDish(raw) {
     ingredients,
     mains: cleanNames(raw.mains).slice(0, MAX_MAINS),
     cookMinutes: Math.round(cleanNumber(raw.cookMinutes, 0, 24 * 60, 30)),
+    effort: cleanNumber(raw.effort, EFFORT.min, EFFORT.max, EFFORT.default),
     health: cleanNumber(raw.health, 1, 5, 3),
     yum: cleanNumber(raw.yum, YUM.min, YUM.max, 3),
     liking: cleanNumber(raw.liking, LIKING.min, LIKING.max, 0),
@@ -136,6 +138,14 @@ function migrate(raw) {
   if (blob.schemaVersion === 2) migrateToV3(blob);
   // v4 only adds optional fields (`recipe`, `settings.portions`): normalizeState fills them in.
   if (blob.schemaVersion === 3) blob.schemaVersion = 4;
+  if (blob.schemaVersion === 4) {
+    // v5 adds effort: starter dishes get theirs, the user's own get EFFORT.default from cleanDish.
+    blob.dishes = blob.dishes.map((d) => {
+      const effort = d && typeof d === 'object' && d.effort == null ? starterEffort(String(d.id)) : undefined;
+      return effort == null ? d : { ...d, effort };
+    });
+    blob.schemaVersion = 5;
+  }
   return blob;
 }
 
