@@ -12,14 +12,21 @@ const ctx = () => ({ now: NOW, events: [], dishes: STARTER_DISHES });
 const plain = { id: 'x', name: 'X', health: 3, yum: 3, effort: 3, cookMinutes: 30, liking: 0, mains: ['x'], ingredients: [] };
 const score = (changes) => scoreDish({ ...plain, ...changes }, ctx());
 
-test('cookLevel: 1 at 10 minutes or less, 5 at 2½ hours or more, a straight line in between', () => {
+test('cookLevel: 1 at 10 minutes or less, 5 at 2½ hours or more, logarithmic in between', () => {
   assert.deepEqual([COOK_LEVEL.minMinutes, COOK_LEVEL.maxMinutes], [10, 150]);
   assert.equal(cookLevel(0), 1);
   assert.equal(cookLevel(10), 1);
-  assert.equal(cookLevel(45), 2);
-  assert.equal(cookLevel(80), 3);
-  assert.equal(cookLevel(150), 5);
-  assert.equal(cookLevel(180), 5);
+  assert.ok(Math.abs(cookLevel(150) - 5) < 1e-9);
+  assert.equal(cookLevel(180), cookLevel(150));
+  // Each level about doubles the time, so short dishes are told apart.
+  for (const [minutes, level] of [[20, 2], [40, 3], [75, 4]]) {
+    assert.ok(Math.abs(cookLevel(minutes) - level) < 0.1, `${minutes} min is level ${cookLevel(minutes)}`);
+  }
+  let previous = 0;
+  for (let minutes = 10; minutes <= 150; minutes += 5) {
+    assert.ok(cookLevel(minutes) > previous, `${minutes} min ranks above ${minutes - 5}`);
+    previous = cookLevel(minutes);
+  }
 });
 
 test('weights: cooking time counts as much as yum, effort between yum and health', () => {

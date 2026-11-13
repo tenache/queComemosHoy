@@ -117,9 +117,12 @@ test('no bans: a dish swiped left in the last 4 days gets no floor, then gets it
 });
 
 test('the floor is small: liking still decides how often a dish comes up', () => {
-  const dishes = withDisliked();
-  const neutral = pOf(probabilities(STARTER_DISHES, ctx(), 'low'), DISLIKED);
-  const disliked = pOf(probabilities(dishes, ctx([], { dishes }), 'low'), DISLIKED);
+  // A mid-ranked dish: one already near the floor at neutral liking (low yum,
+  // lots of effort, like DISLIKED) has little room left to drop.
+  const id = 'lentejas';
+  const dishes = STARTER_DISHES.map((d) => (d.id === id ? { ...d, liking: LIKING.min } : d));
+  const neutral = pOf(probabilities(STARTER_DISHES, ctx(), 'low'), id);
+  const disliked = pOf(probabilities(dishes, ctx([], { dishes }), 'low'), id);
   assert.ok(disliked < neutral / 2, 'the lowest liking makes it much rarer than neutral');
 });
 

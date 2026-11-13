@@ -34,7 +34,8 @@ export const LIKING = {
 export const YUM = { min: 1, max: 5, step: 0.25 };
 
 // Cooking time on a 1–5 scale for the score: level 1 at `minMinutes` or less,
-// level 5 at `maxMinutes` or more, straight line in between. Cards still show minutes.
+// level 5 at `maxMinutes` or more, logarithmic in between, so each level about
+// doubles the time (20 min ≈ 2, 40 ≈ 3, 75 ≈ 4). Cards still show minutes.
 export const COOK_LEVEL = { minMinutes: 10, maxMinutes: 150 };
 
 // Effort: 1–5, how much of the cooking time someone is actually working (not
@@ -88,7 +89,8 @@ function daysSince(time, now) {
 /** Cooking time on the 1–5 scale of COOK_LEVEL. */
 export function cookLevel(minutes) {
   const { minMinutes, maxMinutes } = COOK_LEVEL;
-  return 1 + (4 * clamp((Number(minutes) || 0) - minMinutes, 0, maxMinutes - minMinutes)) / (maxMinutes - minMinutes);
+  const m = clamp(Number(minutes) || 0, minMinutes, maxMinutes);
+  return 1 + (4 * Math.log(m / minMinutes)) / Math.log(maxMinutes / minMinutes);
 }
 
 /** New liking after a card action. Unknown actions leave it unchanged. */
