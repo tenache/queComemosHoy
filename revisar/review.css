@@ -1,0 +1,125 @@
+/* The review page (revisar/). Builds on ../styles.css: its colours, .view, .btn and .chip. */
+
+.rv-view {
+  min-height: 100dvh;
+  padding-bottom: calc(32px + env(safe-area-inset-bottom));
+}
+
+.rv-title {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  margin-top: 12px;
+}
+
+.rv-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rv-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--chip);
+  overflow: hidden;
+}
+
+.rv-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.rv-dish {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.rv-dish h1 {
+  font-size: 1.45rem;
+  line-height: 1.2;
+}
+
+.rv-emoji {
+  font-size: 2.6rem;
+  line-height: 1;
+}
+
+.rv-question {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.rv-tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rv-tier {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 64px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  text-align: left;
+}
+
+.rv-tier[aria-pressed='true'],
+.btn.rv-chosen {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+}
+
+.rv-hint,
+.rv-examples {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.rv-examples {
+  font-style: italic;
+}
+
+.rv-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rv-note,
+.rv-other input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.rv-other {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rv-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+details summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
