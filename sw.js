@@ -6,7 +6,7 @@
 // version; the page then shows "Hay una versión nueva" and the user reloads
 // into it.
 
-const VERSION = 'v1-334cd54c';
+const VERSION = 'v1-eb303e9b';
 const CACHE = `qch-shell-${VERSION}`;
 const SHELL = [
   './',

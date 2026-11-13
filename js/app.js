@@ -1138,7 +1138,12 @@ function tuningRow(p) {
     value: shown(paramValue(p.key)),
     'aria-label': label,
     onchange: (e) => {
-      const text = String(e.target.value).trim().replace(',', '.');
+      // Text the browser can't read as a number also arrives as "": put the value back, don't reset it.
+      if (e.target.validity.badInput) {
+        render();
+        return;
+      }
+      const text = String(e.target.value).trim();
       const n = Number(text);
       setPhone(text === '' || !Number.isFinite(n) ? null : n / scale);
     },

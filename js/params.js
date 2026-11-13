@@ -35,7 +35,7 @@ const ROWS = [
   ['WEIGHTS.favorite', 'score', 0, 5, 0.05],
   ['WEIGHTS.missingIngredient', 'score', 0, 5, 0.05],
   ['SIDE_EFFORT.quantile', 'score', 0, 1, 0.05],
-  ['COOK_LEVEL.minMinutes', 'score', 1, 120, 5],
+  ['COOK_LEVEL.minMinutes', 'score', 5, 120, 5],
   ['COOK_LEVEL.maxMinutes', 'score', 10, 600, 5],
 
   ['WEIGHTS.repeat', 'variety', 0, 10, 0.1],
