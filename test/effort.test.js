@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { STARTER_DISHES } from '../js/dishes.js';
-import { COOK_LEVEL, EFFORT, WEIGHTS, cookLevel, scoreDish } from '../js/scoring.js';
+import { COOK_LEVEL, EFFORT, SIDE_EFFORT_QUANTILE, WEIGHTS, cookLevel, mainCandidates, mealEffort, pickSide, quantile, scoreDish } from '../js/scoring.js';
 import { SCHEMA_VERSION, normalizeState } from '../js/state.js';
 
 const NOW = Date.UTC(2026, 10, 13, 20, 0, 0);
@@ -63,6 +63,72 @@ test('starter efforts are consistent: a dish never takes less work than one it i
   ];
   for (const [dish, part] of includes) assert.ok(effort(dish) >= effort(part), `${dish} (${effort(dish)}) >= ${part} (${effort(part)})`);
   assert.equal(effort('pure-calabaza'), effort('pure'), 'both purés take the same work (Thomas, 2026-11-13)');
+});
+
+const starter = (id) => STARTER_DISHES.find((d) => d.id === id);
+const meal = (id, pinned = null, dishes = STARTER_DISHES) => mealEffort(starter(id), dishes, pinned);
+
+test('quantile: interpolates between the two nearest values, in any order', () => {
+  assert.equal(SIDE_EFFORT_QUANTILE, 0.25);
+  assert.equal(quantile([3], 0.25), 3);
+  assert.equal(quantile([3, 2], 0.25), 2.25);
+  assert.equal(quantile([1, 2, 3], 0.25), 1.5);
+  assert.equal(quantile([3, 1, 2, 2], 0.25), 1.75);
+  assert.equal(quantile([1, 2, 2, 3, 3], 0.25), 2);
+  assert.equal(quantile([1, 2, 2, 3, 3], 0), 1);
+  assert.equal(quantile([1, 2, 2, 3, 3], 1), 3);
+  assert.equal(quantile([1, 2, 2, 3, 3], 0.5), 2);
+});
+
+test('meal effort: a main counts the first quartile of its sides, added as main + side - 1, capped at 5', () => {
+  assert.equal(meal('pollo-curry'), starter('pollo-curry').effort, 'a complete dish keeps its own');
+  assert.equal(meal('pechuga-plancha'), 1.75, 'pechuga 1, sides 1 2 2 3: first quartile 1.75');
+  assert.equal(meal('bife-plancha'), 2, 'bife 1, sides 2 2 3 3: first quartile 2');
+  assert.equal(meal('hamburguesas'), 4.25, 'two sides (2 and 3): a quarter of the way, 2.25');
+  assert.equal(meal('milanesas-pure'), 5, 'milanesas 4, sides 1 2 2 3 3: 4 + 2 - 1');
+  const heavy = { ...starter('empanadas-carne'), sides: ['pure'] };
+  assert.equal(mealEffort(heavy, STARTER_DISHES), EFFORT.max, 'empanadas 5 + puré 3 - 1, capped at 5');
+  assert.equal(meal('pure'), starter('pure').effort, 'a side alone is itself');
+  const oneSide = { ...starter('bife-plancha'), sides: ['pure'] };
+  assert.equal(mealEffort(oneSide, STARTER_DISHES), 3, 'one side: that one');
+});
+
+test('meal effort: a pinned side counts instead, if it goes with the main; "never show" sides do not count', () => {
+  assert.equal(meal('pechuga-plancha', 'pure-calabaza'), 3, 'pinned puré de calabaza (3)');
+  assert.equal(meal('pechuga-plancha', 'arroz-blanco'), 1, 'pinned arroz blanco (1)');
+  assert.equal(meal('pechuga-plancha', 'papas-fritas'), 1.75, 'a pinned side that does not go with it is ignored');
+  const hidden = STARTER_DISHES.map((d) => (d.id === 'arroz-blanco' ? { ...d, neverShow: true } : d));
+  assert.equal(meal('pechuga-plancha', null, hidden), 2, 'without arroz: sides 2 2 3, first quartile 2');
+  const noEasy = STARTER_DISHES.map((d) => (['arroz-blanco', 'ensalada-mixta', 'verduras-vapor'].includes(d.id) ? { ...d, neverShow: true } : d));
+  assert.equal(meal('pechuga-plancha', null, noEasy), 3, 'only puré de calabaza (3) left');
+});
+
+test('meal effort: adding a side never makes a meal less work than its main, for every starter main', () => {
+  for (const main of mainCandidates(STARTER_DISHES)) {
+    const m = mealEffort(main, STARTER_DISHES);
+    assert.ok(m >= main.effort && m <= EFFORT.max, `${main.id}: meal ${m}, main ${main.effort}`);
+  }
+});
+
+test('the card scores a main with its side; sides are scored alone', () => {
+  const pechuga = starter('pechuga-plancha');
+  const alone = { ...pechuga, sides: [] };
+  const close = (a, b) => Math.abs(a - b) < 1e-9;
+  const base = { now: NOW, events: [], dishes: STARTER_DISHES };
+  // Same dish, with and without its sides: the difference is exactly the side's share of the effort.
+  const extra = mealEffort(pechuga, STARTER_DISHES) - pechuga.effort;
+  assert.ok(close(scoreDish(alone, base) - scoreDish(pechuga, base), (WEIGHTS.effort * extra) / 4), 'meal effort 1.75 vs 1');
+  assert.ok(close(scoreDish(pechuga, { ...base, asSide: true }), scoreDish(alone, base)), 'asSide: counts alone');
+  // A main used as another main's side counts alone too (milanesas go with ravioles con tuco).
+  const ravioles = { ...starter('ravioles-tuco'), sides: ['pure', 'papas-fritas'] };
+  const dishes = STARTER_DISHES.map((d) => (d.id === ravioles.id ? ravioles : d));
+  assert.ok(scoreDish(ravioles, { ...base, dishes, asSide: true }) > scoreDish(ravioles, { ...base, dishes }));
+  // pickSide scores its options as sides: the whole draw is the same as with ravioles having no sides.
+  const milanesas = starter('milanesas-pure');
+  for (let r = 0; r < 1; r += 0.005) {
+    const rng = () => r;
+    assert.equal(pickSide(milanesas, { ...base, dishes }, 'medium', { rng }).id, pickSide(milanesas, base, 'medium', { rng }).id, `rng ${r}`);
+  }
 });
 
 test('migration v4 → v5: starter dishes get their effort, the user\'s own get the default', () => {
