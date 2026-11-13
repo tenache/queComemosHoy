@@ -4,6 +4,7 @@
 import { NEW_IN_V3, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
 import { ACTIONS, EFFORT, FAVORITES_MAX, LIKING, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
 import { FOODS } from './nutrition.js';
+import { cleanParams } from './params.js';
 import { DEFAULT_CUISINES, cleanCuisine, cleanCuisines } from './wheel.js';
 
 // 1: the v1 app. 2: adds the delivery wheel (`cuisines`, `deliveries`).
@@ -30,7 +31,8 @@ export function defaultState() {
     missing: [], // the shopping list: ingredients marked missing
     inStock: [], // manual pantry mode: ingredients the user says they have
     // favoritesAsked: the "choose your favourites" question was answered or skipped.
-    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default },
+    // params: this phone's tuning (params.js), {key: number}; empty = the defaults.
+    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {} },
     cuisines: [...DEFAULT_CUISINES], // the delivery wheel's slices
     deliveries: [], // {time, cuisine | null, manual?: true}
   };
@@ -236,6 +238,8 @@ export function normalizeState(input) {
       variety: VARIETIES.includes(settings.variety) ? settings.variety : 'medium',
       favoritesAsked: settings.favoritesAsked === true,
       portions: Math.round(cleanNumber(settings.portions, PORTIONS.min, PORTIONS.max, PORTIONS.default)),
+      // Optional and only read on this phone: older copies of the app just drop it, so no schema step.
+      params: cleanParams(settings.params),
     },
     cuisines: cleanCuisines(raw.cuisines),
     deliveries: (Array.isArray(raw.deliveries) ? raw.deliveries : [])

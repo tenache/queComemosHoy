@@ -45,6 +45,25 @@ Las pruebas usan el test runner que viene con Node (20 o más nuevo), sin depend
 node --test
 ```
 
+### Ajustes finos
+
+Los números con los que la app elige (los pesos del puntaje, la ruleta, la variedad…) se leen en tres capas, y cada una pisa a la anterior:
+
+1. **El código** (`js/scoring.js`, `js/wheel.js`): los valores revisados.
+2. **`params.json`**: valores para todos los teléfonos. Se edita en GitHub (el lápiz ✏️ sobre el archivo) y se guarda directo en `main`, **sin issue, PR ni revisión**. Es la única excepción al proceso, y solo para cambios que no tocan nada más que `params.json`. Netlify lo publica en un par de minutos, y cada teléfono lo lee la próxima vez que abre la app (no hace falta cambiar `VERSION` en `sw.js`).
+3. **Este teléfono**: Ajustes → Ajustes finos. Se nota al instante, con una vista previa, y vale solo en ese teléfono. "Copiar mis valores" da las líneas para pegar en `params.json`.
+
+Un ejemplo de `params.json`:
+
+```json
+{
+  "WHEEL.frequencyCap": 15,
+  "WEIGHTS.effort": 1.5
+}
+```
+
+Las claves son las de `js/params.js`. Un valor fuera de rango se recorta, una clave desconocida o que empieza con `_` se ignora, y si el archivo no se puede leer la app sigue con la última copia que funcionó: un error de tipeo no rompe nada.
+
 ### Cómo está armada
 
 HTML, CSS y JavaScript sin framework ni build.
@@ -54,6 +73,8 @@ HTML, CSS y JavaScript sin framework ni build.
 | `js/scoring.js` | El puntaje de cada comida y el sorteo. Módulo puro, con todos los pesos como constantes al principio. |
 | `js/wheel.js` | La ruleta del delivery: el tamaño de la porción "¿Y si cocinamos?", el sorteo y el registro de pedidos. Módulo puro, con todos los números en `WHEEL`. |
 | `js/wheel-view.js` | La pantalla de la ruleta. |
+| `js/params.js` | Los números que se pueden ajustar sin tocar el código: la lista, sus rangos y las tres capas (código, `params.json`, este teléfono). Módulo puro. |
+| `params.json` | Valores para todos los teléfonos (ver Ajustes finos). |
 | `js/state.js` | El estado (un solo objeto JSON con `schemaVersion`), la despensa y el registro de eventos. |
 | `js/storage.js` | Lectura y escritura en `localStorage` (clave `qch:v1`). |
 | `js/strings.js` | Todos los textos de la interfaz, para poder agregar otro idioma. |

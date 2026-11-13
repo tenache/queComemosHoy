@@ -1174,3 +1174,77 @@ textarea {
   font-size: 0.72rem;
   color: var(--muted);
 }
+
+/* ---- Ajustes finos ---- */
+
+.tuning > summary {
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.tuning[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tuning-group {
+  font-size: 0.95rem;
+  margin: 12px 0 0;
+}
+
+.tuning-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--chip);
+}
+
+.tuning-row {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 4px 10px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.tuning-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tuning-row.changed .tuning-text strong {
+  color: var(--accent);
+}
+
+.tuning-row input {
+  width: 96px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: right;
+}
+
+.tuning-default {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tuning-json {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: 0.85rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
