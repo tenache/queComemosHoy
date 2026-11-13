@@ -1,3 +1,5 @@
 {
-  "_ayuda": "Valores para todos los teléfonos. Agregá líneas como \"WHEEL.frequencyCap\": 15 (separadas por comas). Las claves están en js/params.js, y en la app: Ajustes → Ajustes finos → Copiar mis valores. Las que empiezan con _ se ignoran. Ver el README: Ajustes finos."
+  "_ayuda": "Valores para todos los teléfonos. Agregá líneas como \"WHEEL.frequencyCap\": 15 (separadas por comas). Las claves están en js/params.js, y en la app: Ajustes → Ajustes finos → Copiar mis valores. Las que empiezan con _ se ignoran. Ver el README: Ajustes finos.",
+  "WHEEL.frequencyCap": 24,
+  "WHEEL.pressureExponent": 2.5
 }
