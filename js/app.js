@@ -1628,6 +1628,16 @@ function overlayMood() {
         ),
       ),
     ),
+    // Reopened from the chip, there is an answer to keep: a way back without changing it.
+    current &&
+      h(
+        'div',
+        { class: 'row sheet-foot' },
+        button(t('cancel'), () => {
+          ui.mood = false;
+          render();
+        }),
+      ),
   );
 }
 
@@ -1717,7 +1727,7 @@ function render() {
   if (ui.recipe && !dishById(ui.recipe.mainId)) ui.recipe = null;
   // Ask how the cook is once a day, then (only the first time) for favourites:
   // on Hoy, when nothing else is open.
-  const quiet = !ui.afterMeal && !ui.sheet && !ui.picking && !ui.sideSheet && !ui.cooked && !ui.wheel;
+  const quiet = !ui.afterMeal && !ui.sheet && !ui.picking && !ui.sideSheet && !ui.recipe && !ui.cooked && !ui.wheel;
   if (!ui.mood && !ui.favorites && moodToday(state, Date.now()) === null && !ui.readOnly && ui.tab === 'today' && quiet) {
     ui.mood = true;
   }
