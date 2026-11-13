@@ -2,7 +2,7 @@
 // it. No DOM and no storage here, so `node --test` can cover it.
 
 import { NEW_IN_V3, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
-import { ACTIONS, EFFORT, FAVORITES_MAX, LIKING, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
+import { ACTIONS, EFFORT, FAVORITES_MAX, LIKING, MOOD_IDS, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
 import { FOODS } from './nutrition.js';
 import { cleanParams } from './params.js';
 import { DEFAULT_CUISINES, cleanCuisine, cleanCuisines } from './wheel.js';
@@ -32,7 +32,8 @@ export function defaultState() {
     inStock: [], // manual pantry mode: ingredients the user says they have
     // favoritesAsked: the "choose your favourites" question was answered or skipped.
     // params: this phone's tuning (params.js), {key: number}; empty = the defaults.
-    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {} },
+    // mood: the last answer to "¿Cómo está nuestro cocinero hoy?", {day: 'YYYY-MM-DD', id}; null = never asked.
+    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null },
     cuisines: [...DEFAULT_CUISINES], // the delivery wheel's slices
     deliveries: [], // {time, cuisine | null, manual?: true}
   };
@@ -240,6 +241,7 @@ export function normalizeState(input) {
       portions: Math.round(cleanNumber(settings.portions, PORTIONS.min, PORTIONS.max, PORTIONS.default)),
       // Optional and only read on this phone: older copies of the app just drop it, so no schema step.
       params: cleanParams(settings.params),
+      mood: cleanMood(settings.mood),
     },
     cuisines: cleanCuisines(raw.cuisines),
     deliveries: (Array.isArray(raw.deliveries) ? raw.deliveries : [])
@@ -394,4 +396,27 @@ export function splitMissing(main, side, names) {
     main: clean.filter((n) => ofMain.has(n)),
     side: side ? clean.filter((n) => !ofMain.has(n)) : [],
   };
+}
+
+// ---- The cook's mood (#21) ----------------------------------------------
+
+/** The local calendar day of a timestamp, as YYYY-MM-DD: an answer lasts one of these. */
+export function localDay(now) {
+  const d = new Date(now);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function cleanMood(raw) {
+  if (!raw || typeof raw !== 'object' || !MOOD_IDS.includes(raw.id)) return null;
+  return typeof raw.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.day) ? { day: raw.day, id: raw.id } : null;
+}
+
+/** Today's answer, or null when it hasn't been asked today. */
+export function moodToday(state, now) {
+  const mood = state.settings.mood;
+  return mood && mood.day === localDay(now) ? mood.id : null;
+}
+
+export function setMood(state, id, now) {
+  if (MOOD_IDS.includes(id)) state.settings.mood = { day: localDay(now), id };
 }

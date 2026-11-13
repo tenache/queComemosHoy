@@ -1,7 +1,7 @@
 // UI. All text comes from strings.js, all scoring from scoring.js, all state
 // changes go through state.js and are saved by commit().
 
-import { ACTIONS, FAVORITES_MAX, afterMealDue, mainCandidates, mealMinutes, pickDish, pickSide, probabilities, sidesOf } from './scoring.js';
+import { ACTIONS, FAVORITES_MAX, MOOD_IDS, afterMealDue, mainCandidates, mealMinutes, pickDish, pickSide, probabilities, sidesOf } from './scoring.js';
 import { PARAMS, PARAM_GROUPS, applyParams, cleanParams, defaultParam, paramSource, paramValue, paramsJson } from './params.js';
 import {
   MAX_MAINS,
@@ -17,9 +17,11 @@ import {
   logCardAction,
   markInStock,
   markMissing,
+  moodToday,
   normalizeState,
   planUndo,
   setFavorites,
+  setMood,
   splitMissing,
   toggleFavorite,
   undoCardAction,
@@ -94,6 +96,7 @@ const ui = {
   pinnedSide: null, // 📌 a side the user fixed: only mains that go with it are suggested
   sideSheet: null, // {mode: 'card' | 'pick', mainId, sideId} while the "¿Con qué?" sheet is open
   favorites: null, // Set of dish ids while the "choose your favourites" question shows
+  mood: false, // while the "¿Cómo está nuestro cocinero hoy?" question shows
   recipe: null, // {mainId, sideId} while the recipe sheet is open
   cooked: null, // {dishId, event, undo} while the "¡A cocinar!" panel shows
   sheet: null, // {dishId, sideId, selected:Set} while the 🛒 sheet is open
@@ -231,6 +234,7 @@ function scoringContext() {
     dishes: state.dishes,
     isMissing: (name) => isMissing(state, name),
     pinnedSideId: ui.pinnedSide,
+    mood: moodToday(state, Date.now()),
   };
 }
 
@@ -451,6 +455,25 @@ function varietyControl() {
   );
 }
 
+const MOOD_EMOJI = { lazy: '🛋️', rushed: '⏱️', yum: '😋', healthy: '🥦', different: '✨', usual: '🙂' };
+
+const openMood = () => {
+  ui.mood = true;
+  render();
+};
+
+/** Today's mood next to the title: just its emoji, so Hoy needs no extra row on small phones. Tapping reopens the question. */
+function moodChip() {
+  const id = moodToday(state, Date.now()) ?? 'usual';
+  const label = t('moodChange', { name: t(`moodShort:${id}`) });
+  return h(
+    'button',
+    { type: 'button', class: 'side-chip mood-chip', 'aria-label': label, title: label, onclick: openMood },
+    MOOD_EMOJI[id],
+    h('span', { class: 'caret', 'aria-hidden': 'true' }, '▾'),
+  );
+}
+
 function dots(value) {
   const n = Math.round(value);
   return h('span', { class: 'dots', 'aria-hidden': 'true' }, '●'.repeat(n), h('span', { class: 'dots-off' }, '●'.repeat(5 - n)));
@@ -481,6 +504,7 @@ function viewToday() {
     'header',
     { class: 'top' },
     h('h1', null, t('appName')),
+    moodChip(),
     h('div', { class: 'variety' }, h('span', { class: 'label' }, t('variety')), varietyControl()),
   );
 
@@ -1573,6 +1597,40 @@ function overlayFavorites() {
   );
 }
 
+function overlayMood() {
+  const current = moodToday(state, Date.now());
+  const choose = (id) => {
+    setMood(state, id, Date.now());
+    ui.mood = false;
+    // Another mood weighs the dishes differently: draw the card and its side again.
+    if (id !== current) {
+      ui.currentId = null;
+      ui.sideFor = null;
+    }
+    commit();
+  };
+  return sheet(
+    t('moodTitle'),
+    h('p', { class: 'help' }, t('moodHelp')),
+    h(
+      'ul',
+      { class: 'list' },
+      MOOD_IDS.map((id) =>
+        h(
+          'li',
+          null,
+          h(
+            'button',
+            { type: 'button', class: 'list-row', 'aria-pressed': String(id === current), onclick: () => choose(id) },
+            h('span', { class: 'list-emoji', style: `background:${gradientFor({ id: `mood-${id}` })}`, 'aria-hidden': 'true' }, MOOD_EMOJI[id]),
+            h('span', { class: 'list-text' }, h('span', { class: 'list-name' }, t(`mood:${id}`)), h('span', { class: 'list-meta' }, t(`moodMeta:${id}`))),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 function overlayAfterMeal() {
   const am = ui.afterMeal;
   const dish = dishById(am.dishId);
@@ -1657,9 +1715,13 @@ function render() {
   if (ui.sheet && !dishById(ui.sheet.dishId)) ui.sheet = null;
   if (ui.sideSheet && !dishById(ui.sideSheet.mainId)) ui.sideSheet = null;
   if (ui.recipe && !dishById(ui.recipe.mainId)) ui.recipe = null;
-  // Ask for favourites once, on Hoy, when nothing else is open.
+  // Ask how the cook is once a day, then (only the first time) for favourites:
+  // on Hoy, when nothing else is open.
   const quiet = !ui.afterMeal && !ui.sheet && !ui.picking && !ui.sideSheet && !ui.cooked && !ui.wheel;
-  if (!ui.favorites && !state.settings.favoritesAsked && !ui.readOnly && ui.tab === 'today' && quiet) {
+  if (!ui.mood && !ui.favorites && moodToday(state, Date.now()) === null && !ui.readOnly && ui.tab === 'today' && quiet) {
+    ui.mood = true;
+  }
+  if (!ui.mood && !ui.favorites && !state.settings.favoritesAsked && !ui.readOnly && ui.tab === 'today' && quiet) {
     ui.favorites = new Set(state.dishes.filter((d) => d.favorite).map((d) => d.id));
   }
 
@@ -1682,17 +1744,19 @@ function render() {
 
   const overlay = ui.afterMeal
     ? overlayAfterMeal()
-    : ui.favorites
-      ? overlayFavorites()
-      : ui.sheet
-        ? overlayMissing()
-        : ui.sideSheet
-          ? overlaySide()
-          : ui.picking
-            ? overlayPicker()
-            : ui.recipe
-              ? overlayRecipe()
-              : null;
+    : ui.mood
+      ? overlayMood()
+      : ui.favorites
+        ? overlayFavorites()
+        : ui.sheet
+          ? overlayMissing()
+          : ui.sideSheet
+            ? overlaySide()
+            : ui.picking
+              ? overlayPicker()
+              : ui.recipe
+                ? overlayRecipe()
+                : null;
   $('overlay').replaceChildren(...(overlay ? [overlay] : []));
   document.body.classList.toggle('has-overlay', Boolean(overlay));
 }
@@ -1780,7 +1844,9 @@ document.addEventListener('visibilitychange', () => {
   refreshParamsFile();
   const before = ui.afterMeal;
   checkAfterMeal();
-  if (ui.afterMeal !== before) render();
+  // Back on a new day: render() asks how the cook is (only on Hoy, so an open dish form keeps what was typed).
+  const moodDue = !ui.mood && ui.tab === 'today' && moodToday(state, Date.now()) === null;
+  if (ui.afterMeal !== before || moodDue) render();
 });
 
 document.addEventListener('keydown', (e) => {
@@ -1792,7 +1858,7 @@ document.addEventListener('keydown', (e) => {
     render();
     return;
   }
-  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.recipe || ui.afterMeal) return;
+  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.mood || ui.recipe || ui.afterMeal) return;
   if (e.target.closest?.('input, textarea, select')) return;
   if (e.key === 'ArrowRight') swipeRight();
   else if (e.key === 'ArrowLeft') swipeLeft();
