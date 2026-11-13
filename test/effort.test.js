@@ -49,6 +49,22 @@ test('more effort or more time lowers the score; a dish with no effort counts as
   assert.ok(effort('pollo-horno-papas') < effort('empanadas-carne'));
 });
 
+test('starter efforts are consistent: a dish never takes less work than one it includes', () => {
+  const effort = (id) => STARTER_DISHES.find((d) => d.id === id).effort;
+  const includes = [
+    ['pollo-curry', 'arroz-blanco'],
+    ['wok-verduras', 'arroz-blanco'],
+    ['arroz-atun', 'arroz-blanco'],
+    ['croquetas-arroz', 'arroz-blanco'],
+    ['fideos-huevo', 'huevos-fritos'],
+    ['fideos-huevo', 'fideos-manteca'],
+    ['ensalada-completa', 'ensalada-mixta'],
+    ['tortilla-papas', 'papas-fritas'],
+  ];
+  for (const [dish, part] of includes) assert.ok(effort(dish) >= effort(part), `${dish} (${effort(dish)}) >= ${part} (${effort(part)})`);
+  assert.equal(effort('pure-calabaza'), effort('pure'), 'both purés take the same work (Thomas, 2026-11-13)');
+});
+
 test('migration v4 → v5: starter dishes get their effort, the user\'s own get the default', () => {
   const pollo = STARTER_DISHES.find((d) => d.id === 'pollo-horno-papas');
   const { effort: _, ...polloV4 } = pollo;

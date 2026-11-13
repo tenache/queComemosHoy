@@ -8,7 +8,10 @@
 // `sides` may point at another main too: milanesas go with ravioles con tuco.
 //
 // `effort` (1–5, hidden from the user) is the hands-on work, not the total
-// time: pollo al horno takes an hour but is 1, empanadas are 5.
+// time: pollo al horno takes an hour but is 1, empanadas are 5. A main's effort
+// is the main alone; its side has its own. Some ids still name the v2 side
+// (`merluza-ensalada` is just "Merluza al horno", see SPLIT_IN_V3). A dish that
+// includes another one's work (curry with its rice) is never below that dish.
 
 // prettier-ignore
 const STARTER_EFFORT = {
@@ -20,7 +23,7 @@ const STARTER_EFFORT = {
   'garbanzos-espinaca': 2, tostado: 1, omelette: 1, 'wok-verduras': 3, asado: 4, 'cerdo-batatas': 1,
   'zapallitos-rellenos': 4, 'croquetas-arroz': 4, salchichas: 1, 'patitas-pollo': 1, 'huevos-fritos': 1,
   'bife-plancha': 1, 'pechuga-plancha': 1, 'fideos-manteca': 1,
-  pure: 3, 'pure-calabaza': 2, 'ensalada-mixta': 2, 'ensalada-tomate': 1, 'papas-fritas': 3,
+  pure: 3, 'pure-calabaza': 3, 'ensalada-mixta': 2, 'ensalada-tomate': 1, 'papas-fritas': 3,
   'papas-horno': 2, 'batatas-horno': 1, 'arroz-blanco': 1, 'verduras-vapor': 2,
 };
 
