@@ -45,7 +45,7 @@ export const EFFORT = { min: 1, max: 5, default: 3 };
 // The side effort that counts for a main with several sides: this quantile of
 // their efforts, interpolated (0.25: the first quartile). The app doesn't
 // always pick the easiest side, so not the lowest (Thomas, 2026-11-13).
-export const SIDE_EFFORT_QUANTILE = 0.25;
+export const SIDE_EFFORT = { quantile: 0.25 };
 
 // Every dish that can appear keeps a minimum chance: this fraction of a fair
 // share (1/N). A dish swiped left in the last `swipeWindowDays` gets no minimum.
@@ -132,7 +132,7 @@ export function quantile(values, q) {
 
 /**
  * Effort of the side that counts for `main`: the pinned side if it goes with
- * this main, else the SIDE_EFFORT_QUANTILE of its sides' efforts, or the only
+ * this main, else the SIDE_EFFORT.quantile of its sides' efforts, or the only
  * one. Null for a complete dish.
  */
 export function sideEffort(main, dishes, pinnedSideId = null) {
@@ -140,7 +140,7 @@ export function sideEffort(main, dishes, pinnedSideId = null) {
   const pinned = pinnedSideId && sides.find((d) => d.id === pinnedSideId);
   if (pinned) return effortOf(pinned);
   if (sides.length === 0) return null;
-  return quantile(sides.map(effortOf), SIDE_EFFORT_QUANTILE);
+  return quantile(sides.map(effortOf), SIDE_EFFORT.quantile);
 }
 
 /**

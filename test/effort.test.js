@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { STARTER_DISHES } from '../js/dishes.js';
-import { COOK_LEVEL, EFFORT, SIDE_EFFORT_QUANTILE, WEIGHTS, cookLevel, mainCandidates, mealEffort, pickSide, quantile, scoreDish } from '../js/scoring.js';
+import { COOK_LEVEL, EFFORT, SIDE_EFFORT, WEIGHTS, cookLevel, mainCandidates, mealEffort, pickSide, quantile, scoreDish } from '../js/scoring.js';
 import { SCHEMA_VERSION, normalizeState } from '../js/state.js';
 
 const NOW = Date.UTC(2026, 10, 13, 20, 0, 0);
@@ -69,7 +69,7 @@ const starter = (id) => STARTER_DISHES.find((d) => d.id === id);
 const meal = (id, pinned = null, dishes = STARTER_DISHES) => mealEffort(starter(id), dishes, pinned);
 
 test('quantile: interpolates between the two nearest values, in any order', () => {
-  assert.equal(SIDE_EFFORT_QUANTILE, 0.25);
+  assert.equal(SIDE_EFFORT.quantile, 0.25);
   assert.equal(quantile([3], 0.25), 3);
   assert.equal(quantile([3, 2], 0.25), 2.25);
   assert.equal(quantile([1, 2, 3], 0.25), 1.5);
