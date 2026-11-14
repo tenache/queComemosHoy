@@ -1,0 +1,13 @@
+# Netlify. The app is static files at the root, with no build. The friends'
+# group (#23) is one function, netlify/functions/group.mjs, at /api/group:
+# Netlify installs its one dependency (package.json) and bundles it.
+
+[build]
+  publish = "."
+
+[build.environment]
+  # @netlify/blobs needs Node 22.12 or newer.
+  NODE_VERSION = "22"
+
+[functions]
+  directory = "netlify/functions"

@@ -26,6 +26,21 @@ import {
   toggleFavorite,
   undoCardAction,
 } from './state.js';
+import {
+  cleanName,
+  createGroup,
+  flushQueue,
+  formatCode,
+  isLocalHost,
+  joinGroup,
+  leaveGroup,
+  listGroup,
+  newSecret,
+  normalizeCode,
+  queuePick,
+  queueUnpick,
+  shouldShare,
+} from './group.js';
 import { formatItem, itemAmount, mealMacros, parseItem } from './nutrition.js';
 import { recipeFor } from './recipes.js';
 import { STORAGE_KEY, loadState, readBackup, saveState } from './storage.js';
@@ -98,7 +113,7 @@ const ui = {
   favorites: null, // Set of dish ids while the "choose your favourites" question shows
   mood: false, // while the "¿Cómo está nuestro cocinero hoy?" question shows
   recipe: null, // {mainId, sideId} while the recipe sheet is open
-  cooked: null, // {dishId, event, undo} while the "¡A cocinar!" panel shows
+  cooked: null, // {dishId, event, undo, shareId} while the "¡A cocinar!" panel shows
   sheet: null, // {dishId, sideId, selected:Set} while the 🛒 sheet is open
   picking: false, // while the "pick from the whole list" sheet is open
   readOnly: false, // stored data is from a newer app version: never save over it
@@ -110,6 +125,9 @@ const ui = {
   installPrompt: null,
   tuningOpen: false, // the "Ajustes finos" section is expanded
   tuningCopied: false,
+  groupForm: { name: '', code: '', error: null, busy: false }, // Ajustes → Grupo de amigos
+  groupList: null, // {you, members, picks}: the group function's last answer
+  groupInvited: false, // the invite was copied (no share sheet on this device)
 };
 
 const $ = (id) => document.getElementById(id);
@@ -305,12 +323,15 @@ function cook(action, missing = [], dishId = ui.currentId, sideId = dishId === u
   if (!dish) return;
   const undo = planUndo(state, dish.id, missing, sideId);
   const event = logCardAction(state, dish.id, action, missing, Date.now(), sideId);
-  ui.cooked = { dishId: dish.id, event, undo };
+  const group = state.settings.group;
+  const shareId = shouldShare(group, dish.id, window.location.hostname) ? queuePick(group, dish.id, event.time) : null;
+  ui.cooked = { dishId: dish.id, event, undo, shareId };
   ui.sheet = null;
   ui.sideSheet = null;
   ui.picking = false;
   ui.pinnedSide = null; // the pin was for tonight's meal
   commit();
+  flushGroup();
 }
 
 /**
@@ -359,10 +380,12 @@ function reject(action, missing = []) {
 }
 
 function undoCook() {
-  const { event, undo } = ui.cooked;
+  const { event, undo, shareId } = ui.cooked;
   undoCardAction(state, event, undo);
+  if (shareId && state.settings.group) queueUnpick(state.settings.group, shareId);
   ui.cooked = null; // back to the card that was showing
   commit();
+  flushGroup();
 }
 
 function openMissingSheet() {
@@ -1050,7 +1073,9 @@ function viewPantry() {
 }
 
 function exportData() {
-  downloadText(JSON.stringify(state, null, 2), `que-comemos-hoy-${today()}.json`);
+  // The group stays out: a copy imported on another phone must not take over this one's place in it.
+  const copy = { ...state, settings: { ...state.settings, group: null } };
+  downloadText(JSON.stringify(copy, null, 2), `que-comemos-hoy-${today()}.json`);
 }
 
 async function importData(file) {
@@ -1062,6 +1087,7 @@ async function importData(file) {
     return;
   }
   if (!window.confirm(t('confirmImport', { dishes: state.dishes.length }))) return;
+  next.settings.group = state.settings.group; // this phone's group, whatever the file says
   state = next;
   applyTuning();
   wheelView.close();
@@ -1109,6 +1135,7 @@ function viewSettings() {
     h('h2', { class: 'section' }, t('portions')),
     portionsControl(),
     h('p', { class: 'help' }, t('portionsHelp')),
+    groupSection(),
     tuningSection(),
     h('h2', { class: 'section' }, t('backup')),
     h('p', { class: 'help' }, t('backupHelp')),
@@ -1133,6 +1160,196 @@ function viewSettings() {
         'primary',
       ),
     ],
+  ];
+}
+
+// ---- Friends' group (group.js, #23) ---------------------------------------
+
+let flushing = false;
+
+/** Sends the picks waiting in the queue. Safe to call often: one run at a time. */
+async function flushGroup() {
+  if (flushing || ui.readOnly || !state.settings.group?.queue.length) return;
+  flushing = true;
+  let result;
+  try {
+    result = await flushQueue(
+      () => state.settings.group,
+      () => saveState(state),
+    );
+  } finally {
+    flushing = false;
+  }
+  if (result === 'gone') leftGroup(t('groupGone'));
+  // A pick queued while the last call was out: send it too.
+  else if (result === 'done' && state.settings.group?.queue.length) flushGroup();
+  else if (ui.tab === 'settings' && !ui.editing) render(); // the "waiting" line
+}
+
+function leftGroup(message = null) {
+  state.settings.group = null;
+  ui.groupList = null;
+  ui.groupForm = { name: '', code: '', error: null, busy: false };
+  commit();
+  if (message) addBanner('group', message);
+}
+
+/** Who is in the group, for Ajustes. Also notices a group this phone was taken out of. */
+async function refreshGroupMembers() {
+  const group = state.settings.group;
+  if (!group) return;
+  const res = await listGroup(group);
+  if (state.settings.group !== group) return;
+  if (res.status === 403 && res.data?.error === 'not-member') return leftGroup(t('groupGone'));
+  if (res.ok) ui.groupList = res.data;
+  if (ui.tab === 'settings' && !ui.editing) render();
+}
+
+function groupError({ status, data }) {
+  if (status === 0) return t('groupOffline');
+  const key = { 'no-group': 'groupNoGroup', full: 'groupFull', 'bad-name': 'groupNameMissing' }[data?.error];
+  return t(key ?? 'groupError');
+}
+
+/** Runs one call to the group function from Ajustes, showing "busy" and any error. */
+async function groupCall(call, onOk) {
+  const form = ui.groupForm;
+  form.busy = true;
+  form.error = null;
+  render();
+  const res = await call;
+  form.busy = false;
+  if (res.ok) onOk(res.data);
+  else form.error = groupError(res);
+  commit();
+}
+
+/** "Crear un grupo" (create = true) or "Unirme". */
+function enterGroup(create) {
+  const form = ui.groupForm;
+  const name = cleanName(form.name);
+  const code = create ? null : normalizeCode(form.code);
+  form.error = !name ? t('groupNameMissing') : !create && !code ? t('groupBadCode') : null;
+  if (form.error) return render();
+  const secret = newSecret();
+  groupCall(create ? createGroup(secret, name) : joinGroup(code, secret, name), (data) => {
+    state.settings.group = { code: data.code, secret, name, sharing: true, queue: [] };
+    ui.groupList = data;
+    ui.groupForm = { name: '', code: '', error: null, busy: false };
+  });
+}
+
+/** A new name: joining again with the same secret replaces the old one. */
+function renameInGroup() {
+  const group = state.settings.group;
+  const name = cleanName(ui.groupForm.name);
+  if (!name) {
+    ui.groupForm.error = t('groupNameMissing');
+    return render();
+  }
+  groupCall(joinGroup(group.code, group.secret, name), (data) => {
+    group.name = name;
+    ui.groupList = data;
+    ui.groupForm.name = '';
+  });
+}
+
+async function leaveMyGroup() {
+  const group = state.settings.group;
+  if (!window.confirm(t('groupLeaveConfirm'))) return;
+  ui.groupForm.busy = true;
+  render();
+  const res = await leaveGroup(group);
+  ui.groupForm.busy = false;
+  // Not in it on the server either: nothing left there to delete.
+  if (res.ok || (res.status === 403 && res.data?.error === 'not-member')) return leftGroup();
+  ui.groupForm.error = res.status === 0 ? t('groupOfflineLeave') : t('groupError');
+  render();
+}
+
+async function inviteToGroup() {
+  const group = state.settings.group;
+  const url = new URL('./', window.location.href).href;
+  const text = t('groupInviteText', { url, code: formatCode(group.code) });
+  if (navigator.share) {
+    try {
+      await navigator.share({ text });
+    } catch {
+      // The share sheet was closed: nothing to do.
+    }
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    ui.groupInvited = true;
+  } catch {
+    window.prompt(t('groupInviteCopy'), text);
+  }
+  render();
+}
+
+function groupSection() {
+  const group = state.settings.group;
+  const form = ui.groupForm;
+  const textInput = (id, key, props = {}) =>
+    h('input', { id, type: 'text', value: form[key], autocomplete: 'off', oninput: (e) => (form[key] = e.target.value), ...props });
+  const field = (input, label) => h('div', { class: 'field' }, h('label', { for: input.id }, label), input);
+  const busy = form.busy || ui.readOnly;
+  const local = isLocalHost(window.location.hostname) && h('p', { class: 'help' }, t('groupLocalhost'));
+  const error = h('p', { class: 'error', role: 'alert' }, form.error ?? '');
+
+  if (!group) {
+    return [
+      h('h2', { class: 'section' }, t('groupTitle')),
+      h('p', { class: 'help' }, t('groupHelp')),
+      h('p', { class: 'help' }, t('groupPrivacy')),
+      field(textInput('g-name', 'name', { maxLength: 30 }), t('groupYourName')),
+      button(t('groupCreate'), () => enterGroup(true), 'primary', { disabled: busy }),
+      field(textInput('g-code', 'code', { placeholder: 'ABCD-2345', autocapitalize: 'characters', spellcheck: false }), t('groupCodeLabel')),
+      button(t('groupJoin'), () => enterGroup(false), '', { disabled: busy }),
+      local,
+      error,
+    ];
+  }
+
+  const list = ui.groupList;
+  const others = (list?.members ?? []).filter((m) => m.id !== list.you).map((m) => m.name);
+  return [
+    h('h2', { class: 'section' }, t('groupTitle')),
+    h('p', { class: 'help' }, t('groupHelp')),
+    h('p', { class: 'group-code' }, h('span', { class: 'label' }, t('groupCodeLabel')), h('strong', null, formatCode(group.code))),
+    button(ui.groupInvited ? t('groupInvited') : t('groupInvite'), inviteToGroup, 'primary', { disabled: ui.readOnly }),
+    list && h('p', { class: 'help' }, others.length > 0 ? t('groupMembers', { list: others.join(', ') }) : t('groupAlone')),
+    h(
+      'div',
+      { class: 'field' },
+      h('label', { for: 'g-rename' }, t('groupYourName')),
+      h(
+        'div',
+        { class: 'row' },
+        textInput('g-rename', 'name', { maxLength: 30, placeholder: group.name }),
+        button(t('groupSaveName'), renameInGroup, '', { disabled: busy }),
+      ),
+    ),
+    h(
+      'label',
+      { class: 'check' },
+      h('input', {
+        type: 'checkbox',
+        checked: group.sharing,
+        disabled: ui.readOnly,
+        onchange: (e) => {
+          group.sharing = e.target.checked;
+          commit();
+        },
+      }),
+      h('span', null, h('strong', null, t('groupSharing')), h('span', { class: 'help' }, t('groupSharingHelp'))),
+    ),
+    group.queue.length > 0 && h('p', { class: 'help' }, t('groupWaiting', { n: group.queue.length })),
+    local,
+    h('p', { class: 'help' }, t('groupPrivacy')),
+    button(t('groupLeave'), leaveMyGroup, 'danger', { disabled: busy }),
+    error,
   ];
 }
 
@@ -1698,6 +1915,7 @@ function switchTab(tab) {
   ui.tab = tab;
   ui.editing = null;
   wheelView.close();
+  if (tab === 'settings') refreshGroupMembers();
   render();
   window.scrollTo(0, 0);
 }
@@ -1852,6 +2070,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   refreshParamsFile();
+  flushGroup();
   const before = ui.afterMeal;
   checkAfterMeal();
   // Back on a new day: render() asks how the cook is (only on Hoy, so an open dish form keeps what was typed).
@@ -1874,7 +2093,10 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') swipeLeft();
 });
 
+window.addEventListener('online', () => flushGroup());
+
 checkAfterMeal();
 render();
 watchServiceWorker();
 refreshParamsFile();
+flushGroup();

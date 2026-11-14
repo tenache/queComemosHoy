@@ -4,6 +4,7 @@
 import { NEW_IN_V3, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
 import { ACTIONS, EFFORT, FAVORITES_MAX, LIKING, MOOD_IDS, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
 import { FOODS } from './nutrition.js';
+import { cleanGroup } from './group.js';
 import { cleanParams } from './params.js';
 import { DEFAULT_CUISINES, cleanCuisine, cleanCuisines } from './wheel.js';
 
@@ -33,7 +34,8 @@ export function defaultState() {
     // favoritesAsked: the "choose your favourites" question was answered or skipped.
     // params: this phone's tuning (params.js), {key: number}; empty = the defaults.
     // mood: the last answer to "¿Cómo está nuestro cocinero hoy?", {day: 'YYYY-MM-DD', id}; null = never asked.
-    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null },
+    // group: the friends' group this phone is in (group.js, #23); null = none.
+    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null, group: null },
     cuisines: [...DEFAULT_CUISINES], // the delivery wheel's slices
     deliveries: [], // {time, cuisine | null, manual?: true}
   };
@@ -242,6 +244,7 @@ export function normalizeState(input) {
       // Optional and only read on this phone: older copies of the app just drop it, so no schema step.
       params: cleanParams(settings.params),
       mood: cleanMood(settings.mood),
+      group: cleanGroup(settings.group),
     },
     cuisines: cleanCuisines(raw.cuisines),
     deliveries: (Array.isArray(raw.deliveries) ? raw.deliveries : [])
