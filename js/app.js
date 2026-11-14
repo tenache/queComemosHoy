@@ -32,6 +32,8 @@ import {
   dropQueuedPicks,
   flushQueue,
   formatCode,
+  friendCounts,
+  friendsPicks,
   isLocalHost,
   joinGroup,
   leaveGroup,
@@ -59,6 +61,7 @@ let state = loaded.state;
 // ---- Tuning (params.js): code ← params.json ← this phone ------------------
 
 const PARAMS_FILE_KEY = 'qch:params-file'; // the last params.json that could be read
+const GROUP_LIST_KEY = 'qch:group-list'; // the group's last list (#23), for the 💞 while offline
 const paramsFile = { values: readCachedParams(), status: null }; // status: null (not yet) | 'ok' | 'error'
 
 function readCachedParams() {
@@ -127,7 +130,8 @@ const ui = {
   tuningOpen: false, // the "Ajustes finos" section is expanded
   tuningCopied: false,
   groupForm: { name: '', code: '', error: null, busy: false }, // Ajustes → Grupo de amigos (+ secret: kept so a retried join is the same member)
-  groupList: null, // {you, members, picks}: the group function's last answer
+  groupList: readCachedGroupList(), // {code, time, you, members, picks}: the group function's last list
+  friends: null, // dishId while the "💞 También lo eligieron" sheet is open
   groupInvited: false, // the invitation was copied ("Copiar")
 };
 
@@ -254,6 +258,7 @@ function scoringContext() {
     isMissing: (name) => isMissing(state, name),
     pinnedSideId: ui.pinnedSide,
     mood: moodToday(state, Date.now()),
+    friends: friendCounts(currentGroupList(), Date.now()),
   };
 }
 
@@ -309,7 +314,7 @@ function mealName(main, side) {
 const mealIngredients = (main, side) => [...new Set([...main.ingredients, ...(side?.ingredients ?? [])])];
 
 function checkAfterMeal() {
-  if (ui.afterMeal || ui.sheet || ui.picking || ui.sideSheet || ui.favorites) return;
+  if (ui.afterMeal || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.friends) return;
   const due = afterMealDue(state.events, state.dishes, Date.now());
   if (!due) return;
   ui.afterMeal = { event: due.event, dishId: due.dish.id, selected: new Set(), verdict: null };
@@ -611,6 +616,12 @@ function viewToday() {
       'div',
       { class: 'card-art', style: `background:${gradientFor(dish)}` },
       h('span', { class: 'card-emoji', 'aria-hidden': 'true' }, dish.emoji),
+      friendsPicks(currentGroupList(), Date.now()).has(dish.id) &&
+        h(
+          'button',
+          { type: 'button', class: 'friends-mark', 'aria-label': t('friendsMark'), title: t('friendsMark'), onclick: () => openFriends(dish.id) },
+          '💞',
+        ),
       h('span', { class: 'stamp stamp-yes', 'aria-hidden': 'true' }, `👉 ${t('actionCook')}`),
       h('span', { class: 'stamp stamp-no', 'aria-hidden': 'true' }, `👈 ${t('actionReject')}`),
     ),
@@ -1197,17 +1208,47 @@ function canRedrawSettings() {
 function leftGroup(message = null) {
   state.settings.group = null;
   ui.groupList = null;
+  ui.friends = null;
+  try {
+    localStorage.removeItem(GROUP_LIST_KEY);
+  } catch {
+    // Nothing cached, or nowhere to cache: either way it's gone.
+  }
   ui.groupForm = { name: '', code: '', error: null, busy: false };
   commit();
   if (message) addBanner('group', message);
 }
 
-/** Who is in the group, for Ajustes. Also notices a group this phone was taken out of. */
+function readCachedGroupList() {
+  try {
+    const list = JSON.parse(localStorage.getItem(GROUP_LIST_KEY));
+    return list && typeof list === 'object' && Array.isArray(list.picks) ? list : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The last list, if it is of the group this phone is in now (another tab may have changed it). */
+function currentGroupList() {
+  const list = ui.groupList;
+  return list && list.code === state.settings.group?.code ? list : null;
+}
+
+// How often the 💞 are fetched again while the app stays open.
+const GROUP_REFRESH_MS = 3 * 60 * 1000;
 let listing = null; // the list call on its way, if any: leaving waits for it
 
-async function refreshGroupMembers() {
+/**
+ * Fetches who is in the group and what they picked: for the 💞 on the card,
+ * the score and Ajustes. At most every GROUP_REFRESH_MS unless `force`.
+ * Also notices a group this phone was taken out of.
+ */
+async function refreshGroupList(force = false) {
   const group = state.settings.group;
-  if (!group || listing) return;
+  if (!group || listing || ui.readOnly) return;
+  const last = currentGroupList();
+  // A little slack: `time` is when the last answer came, so the 3-minute timer would skip every other tick.
+  if (!force && last && Date.now() - last.time < GROUP_REFRESH_MS - 10_000) return;
   listing = listGroup(group);
   let res;
   try {
@@ -1218,9 +1259,47 @@ async function refreshGroupMembers() {
   if (state.settings.group !== group) return;
   if (res.status === 403 && res.data?.error === 'not-member') return leftGroup(t('groupGone'));
   if (!res.ok) return;
-  const before = JSON.stringify([ui.groupList?.you, ui.groupList?.members]);
-  ui.groupList = res.data;
-  if (JSON.stringify([res.data.you, res.data.members]) !== before && canRedrawSettings()) render();
+  const before = currentGroupList();
+  const membersBefore = JSON.stringify([before?.you, before?.members]);
+  const markBefore = ui.currentId && friendsPicks(before, Date.now()).has(ui.currentId);
+  setGroupList(group.code, res.data);
+  const membersNow = JSON.stringify([res.data.you, res.data.members]);
+  const markNow = ui.currentId && friendsPicks(currentGroupList(), Date.now()).has(ui.currentId);
+  // Redraw only what changed where it shows: never under someone typing, nor a card being dragged or flying out.
+  const moving = document.querySelector('.card.dragging, .card.flying');
+  if (membersNow !== membersBefore && canRedrawSettings()) render();
+  else if (ui.tab === 'today' && markBefore !== markNow && !moving) render();
+}
+
+function setGroupList(code, data) {
+  ui.groupList = { code, time: Date.now(), you: data.you, members: data.members ?? [], picks: data.picks ?? [] };
+  try {
+    localStorage.setItem(GROUP_LIST_KEY, JSON.stringify(ui.groupList));
+  } catch {
+    // Not kept for offline use: fetched again next time.
+  }
+}
+
+function openFriends(dishId) {
+  ui.friends = dishId;
+  render();
+}
+
+function overlayFriends() {
+  const who = friendsPicks(currentGroupList(), Date.now()).get(ui.friends) ?? [];
+  const close = () => {
+    ui.friends = null;
+    render();
+  };
+  return sheet(
+    `${t('friendsTitle')}: ${dishById(ui.friends)?.name ?? ''}`,
+    h(
+      'ul',
+      { class: 'friends-list' },
+      who.map((w) => h('li', null, h('span', null, w.name), h('span', { class: 'muted' }, t(w.today ? 'friendsToday' : 'friendsYesterday')))),
+    ),
+    h('div', { class: 'row sheet-foot' }, button(t('close'), close)),
+  );
 }
 
 function groupError({ status, data }) {
@@ -1254,7 +1333,7 @@ function enterGroup(create) {
   const secret = create ? newSecret() : (form.secret ??= newSecret());
   groupCall(create ? createGroup(secret, name) : joinGroup(code, secret, name), (data) => {
     state.settings.group = { code: data.code, secret, name, sharing: true, queue: [] };
-    ui.groupList = data;
+    setGroupList(data.code, data);
     ui.groupForm = { name: '', code: '', error: null, busy: false };
   });
 }
@@ -1269,7 +1348,7 @@ function renameInGroup() {
   }
   groupCall(joinGroup(group.code, group.secret, name), (data) => {
     group.name = name;
-    ui.groupList = data;
+    setGroupList(group.code, data);
     ui.groupForm.name = '';
   });
 }
@@ -1348,7 +1427,7 @@ function groupSection() {
     ];
   }
 
-  const list = ui.groupList;
+  const list = currentGroupList();
   const others = (list?.members ?? []).filter((m) => m.id !== list.you).map((m) => m.name);
   return [
     h('h2', { class: 'section' }, t('groupTitle')),
@@ -1957,7 +2036,8 @@ function switchTab(tab) {
   ui.tab = tab;
   ui.editing = null;
   wheelView.close();
-  if (tab === 'settings') refreshGroupMembers();
+  if (tab === 'settings') refreshGroupList(true);
+  if (tab === 'today') refreshGroupList();
   render();
   window.scrollTo(0, 0);
 }
@@ -1987,7 +2067,7 @@ function render() {
   if (ui.recipe && !dishById(ui.recipe.mainId)) ui.recipe = null;
   // Ask how the cook is once a day, then (only the first time) for favourites:
   // on Hoy, when nothing else is open.
-  const quiet = !ui.afterMeal && !ui.sheet && !ui.picking && !ui.sideSheet && !ui.recipe && !ui.cooked && !ui.wheel;
+  const quiet = !ui.afterMeal && !ui.sheet && !ui.picking && !ui.sideSheet && !ui.recipe && !ui.friends && !ui.cooked && !ui.wheel;
   if (!ui.mood && !ui.favorites && moodToday(state, Date.now()) === null && !ui.readOnly && ui.tab === 'today' && quiet) {
     ui.mood = true;
   }
@@ -2026,7 +2106,9 @@ function render() {
               ? overlayPicker()
               : ui.recipe
                 ? overlayRecipe()
-                : null;
+                : ui.friends
+                  ? overlayFriends()
+                  : null;
   $('overlay').replaceChildren(...(overlay ? [overlay] : []));
   document.body.classList.toggle('has-overlay', Boolean(overlay));
 }
@@ -2113,6 +2195,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   refreshParamsFile();
   flushGroup();
+  refreshGroupList();
   const before = ui.afterMeal;
   checkAfterMeal();
   // Back on a new day: render() asks how the cook is (only on Hoy, so an open dish form keeps what was typed).
@@ -2121,24 +2204,36 @@ document.addEventListener('visibilitychange', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.picking || ui.sideSheet || ui.recipe)) {
+  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.picking || ui.sideSheet || ui.recipe || ui.friends)) {
     ui.sheet = null;
     ui.picking = false;
     ui.sideSheet = null;
     ui.recipe = null;
+    ui.friends = null;
     render();
     return;
   }
-  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.mood || ui.recipe || ui.afterMeal) return;
+  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.mood || ui.recipe || ui.friends || ui.afterMeal) return;
   if (e.target.closest?.('input, textarea, select')) return;
   if (e.key === 'ArrowRight') swipeRight();
   else if (e.key === 'ArrowLeft') swipeLeft();
 });
 
-window.addEventListener('online', () => flushGroup());
+window.addEventListener('online', () => {
+  flushGroup();
+  refreshGroupList();
+});
+// The app can stay open for a long dinner decision: look again now and then,
+// and retry picks that a server error (5xx) or the rate limit held back.
+setInterval(() => {
+  if (document.visibilityState !== 'visible') return;
+  refreshGroupList();
+  flushGroup();
+}, GROUP_REFRESH_MS);
 
 checkAfterMeal();
 render();
 watchServiceWorker();
 refreshParamsFile();
 flushGroup();
+refreshGroupList();

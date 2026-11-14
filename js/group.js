@@ -108,6 +108,35 @@ export function queueUnpick(group, pickId) {
   else group.queue.push({ op: 'unpick', pickId });
 }
 
+/**
+ * Who in the group picked each dish today or yesterday, by this phone's
+ * calendar, from a `list` answer {you, members, picks}: Map dishId →
+ * [{member, name, today}], newest first, one entry per friend. Your own
+ * picks, picks of someone no longer in the group and dishes that aren't
+ * starters are left out.
+ */
+export function friendsPicks(list, now) {
+  const out = new Map();
+  if (!list || !Array.isArray(list.members) || !Array.isArray(list.picks)) return out;
+  const names = new Map(list.members.map((m) => [m.id, m.name]));
+  const d = new Date(now);
+  const today = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const yesterday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1).getTime();
+  for (const pick of [...list.picks].sort((a, b) => b.time - a.time)) {
+    if (pick.member === list.you || !names.has(pick.member) || !STARTER_IDS.has(pick.dishId) || !(pick.time >= yesterday)) continue;
+    const who = out.get(pick.dishId) ?? [];
+    if (who.some((w) => w.member === pick.member)) continue;
+    who.push({ member: pick.member, name: names.get(pick.member), today: pick.time >= today });
+    out.set(pick.dishId, who);
+  }
+  return out;
+}
+
+/** friendsPicks() as counts, for the score: Map dishId → number of friends. */
+export function friendCounts(list, now) {
+  return new Map([...friendsPicks(list, now)].map(([dishId, who]) => [dishId, who.length]));
+}
+
 /** "Compartir mis elecciones" turned off: picks not sent yet never will be. Unpicks still go. */
 export function dropQueuedPicks(group) {
   group.queue = group.queue.filter((o) => o.op !== 'pick');
