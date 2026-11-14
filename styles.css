@@ -336,6 +336,36 @@ button.chip[aria-pressed='true'] {
   transform: rotate(8deg);
 }
 
+/* 💞: someone in the group picked this dish today or yesterday (#23). A tap opens who. */
+.friends-mark {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.friends-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.friends-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
 .card-body {
   padding: 14px 18px 18px;
   display: flex;

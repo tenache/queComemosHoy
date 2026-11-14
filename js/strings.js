@@ -222,6 +222,10 @@ const STRINGS = {
     groupOfflineLeave: 'Sin conexión. Para salir del grupo hace falta internet, así se borran tus platos del servidor.',
     groupError: 'No se pudo. Probá de nuevo en un rato.',
     groupGone: 'Ya no estás en el grupo de amigos.',
+    friendsMark: 'Alguien de tu grupo eligió este plato',
+    friendsTitle: '💞 También lo eligieron',
+    friendsToday: 'hoy',
+    friendsYesterday: 'ayer',
 
     backup: 'Copia de seguridad',
     backupHelp:
@@ -310,6 +314,7 @@ const STRINGS = {
     'tuningGroup:wheel': 'Ruleta del delivery',
     'tuningGroup:score': 'Qué comida sugiere',
     'tuningGroup:mood': 'Ánimo del cocinero',
+    'tuningGroup:friends': 'Grupo de amigos 💞',
     'tuningGroup:variety': 'Variedad y repeticiones',
     'tuningGroup:learning': 'Cómo aprende',
 
@@ -375,6 +380,12 @@ const STRINGS = {
     'paramHelp:MOOD.boost': 'Con fiaca, apurado, algo rico o algo sano: ese peso se multiplica por esto. 1 = el ánimo no cambia nada.',
     'param:MOOD.variety': 'Variedad extra con "algo distinto" (×)',
     'paramHelp:MOOD.variety': 'Multiplica el azar de tu Variedad ese día. 1 = como siempre.',
+    'param:FRIENDS.first': 'Cuánto suma un amigo',
+    'paramHelp:FRIENDS.first': 'Lo que sube un plato que eligió una persona de tu grupo hoy o ayer.',
+    'param:FRIENDS.max': 'Lo máximo que suman los amigos',
+    'paramHelp:FRIENDS.max': 'Con más amigos el empujón crece hacia este número, sin pasarlo.',
+    'param:FRIENDS.rate': 'Qué tan rápido llega al máximo',
+    'paramHelp:FRIENDS.rate': 'Más alto: con pocos amigos ya casi llega. Más bajo: hace falta más gente.',
     'param:TEMPERATURE.high': 'Azar con variedad "Mucha"',
     'paramHelp:TEMPERATURE.high': 'Más alto: más al azar. Más bajo: casi siempre las de mejor puntaje.',
     'param:FLOOR.fairShareFraction': 'Chance mínima de cualquier comida (0 a 1)',

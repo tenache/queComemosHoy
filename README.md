@@ -18,7 +18,7 @@ Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en e
 - **Aprende de lo que elegís.** Lo que cocinás sube, lo que rechazás baja, y nada desaparece salvo que marques "No mostrar nunca": hasta la comida menos querida vuelve a salir cada tanto.
 - **No repite.** Baja las comidas que comiste hace poco y las que comparten ingrediente principal con lo de ayer.
 - **Lista de compras.** Lo que marcás como faltante queda anotado hasta que toques "Comprado".
-- **Grupo de amigos 💞.** En Ajustes creás un grupo y pasás su código, o te unís con el código que te pasaron. Desde ahí, los platos de la app que elegís se comparten con el grupo, con tu nombre. Se puede pausar ("Compartir mis elecciones") y salir del grupo, que borra tus platos del servidor.
+- **Grupo de amigos 💞.** En Ajustes creás un grupo y pasás su código, o te unís con el código que te pasaron. Desde ahí, los platos de la app que elegís se comparten con el grupo, con tu nombre. Cuando la tarjeta muestra un plato que eligió alguien del grupo hoy o ayer, tiene un 💞: tocalo y ves quién. Esos platos salen más seguido: un amigo suma 0,75 al puntaje, y con más amigos sube hacia 2 (se ajusta en Ajustes finos). Se puede pausar ("Compartir mis elecciones") y salir del grupo, que borra tus platos del servidor.
 - **Todo queda en tu dispositivo,** salvo lo que compartís con tu grupo, si te unís a uno. No hay cuentas. En Ajustes podés exportar e importar una copia en JSON (el grupo no va en la copia).
 
 ### Cómo correrla

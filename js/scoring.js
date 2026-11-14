@@ -61,6 +61,20 @@ export const MOOD = { boost: 2, variety: 1.5 };
 const MOOD_WEIGHT = { lazy: 'effort', rushed: 'cookTime', yum: 'yum', healthy: 'health' };
 export const MOOD_IDS = ['lazy', 'rushed', 'yum', 'healthy', 'different', 'usual'];
 
+// Friends' picks (#23): a main that n friends picked today or yesterday gets
+// friendsBoost(n), a logistic curve that starts at `first` for one friend and
+// grows toward `max` at `rate` (Thomas, 2026-11-14): 0.75, 1.24, 1.63, 1.85,
+// 1.94 … → 2. No rule ties it to health.
+export const FRIENDS = { first: 0.75, max: 2, rate: 1 };
+
+/** The boost for a main that `n` friends picked. 0 for none. */
+export function friendsBoost(n) {
+  const { first, max, rate } = FRIENDS;
+  if (!(n >= 1) || first <= 0 || max <= 0) return 0;
+  if (first >= max) return max;
+  return max / (1 + (max / first - 1) * Math.exp(-rate * (n - 1)));
+}
+
 // After-meal question: asked from cookMinutes + delay after a meal, and
 // dropped once the meal is too old to remember.
 export const AFTER_MEAL = { delayMinutes: 60, maxAgeHours: 48 };
@@ -170,10 +184,11 @@ export function mealEffort(main, dishes, pinnedSideId = null) {
  *   pinnedSideId: the side the user pinned, if any (it is the side that counts for a main's effort),
  *   asSide:       true when the dishes are being scored as sides: each counts alone, without sides of its own,
  *   mood:         today's answer to the mood question (MOOD_IDS), or null,
+ *   friends:      Map dishId → how many friends picked it today or yesterday (#23), or null,
  * }
  */
 export function scoreDish(dish, ctx) {
-  const { now, events = [], dishes = [], isMissing = () => false, pinnedSideId = null, asSide = false, mood = null } = ctx;
+  const { now, events = [], dishes = [], isMissing = () => false, pinnedSideId = null, asSide = false, mood = null, friends = null } = ctx;
   const W = moodWeights(mood);
   const effort = asSide ? effortOf(dish) : mealEffort(dish, dishes, pinnedSideId);
 
@@ -187,6 +202,8 @@ export function scoreDish(dish, ctx) {
 
   const missingCount = (dish.ingredients ?? []).filter((i) => isMissing(i)).length;
   score -= W.missingIngredient * missingCount;
+  // Friends pick mains (the card), so a side gets nothing from them.
+  if (friends && !asSide) score += friendsBoost(friends.get(dish.id) ?? 0);
 
   // A meal counts for every dish in it: puré eaten as a side yesterday is a
   // repeat for puré today, and ingredient fatigue for anything with papa.
