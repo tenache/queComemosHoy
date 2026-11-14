@@ -315,3 +315,12 @@ test('bad requests: a secret or code that is not a string is refused, not a cras
   assert.equal((await call(store, { action: 'create', secret: [ANA], name: 'Ana' })).data.error, 'bad-secret');
   assert.equal((await call(store, { action: 'join', secret: ANA, code: ['ABCD2345'], name: 'Ana' })).data.error, 'bad-code');
 });
+
+test("leave after the day's first list (which marks you seen with a new key): nothing of you is left", async () => {
+  // The phone waits for a list on its way before leaving (js/app.js), so this order is the one that happens.
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana'], [NICO, 'Nico']);
+  await call(store, { action: 'list', code, secret: NICO }, NOW + DAY);
+  await call(store, { action: 'leave', code, secret: NICO }, NOW + DAY);
+  assert.ok(![...store.data.keys()].some((k) => k.includes(memberIdOf(NICO))));
+});
