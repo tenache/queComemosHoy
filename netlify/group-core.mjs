@@ -227,12 +227,36 @@ const ACTIONS = {
 // Actions that need you to be in the group already.
 const MEMBER_ONLY = new Set(['leave', 'list', 'pick', 'unpick']);
 
+// The app is published by GitHub Pages and calls this function from there
+// (#26): only that origin gets CORS headers, so no other site's page can use it.
+export const ALLOWED_ORIGINS = new Set(['https://tenache.github.io']);
+const CORS = {
+  'access-control-allow-methods': 'POST',
+  'access-control-allow-headers': 'content-type',
+  'access-control-max-age': '7200',
+};
+
 /**
  * One POST with a JSON body: {action, secret, code?, ...}. Every answer is
- * JSON: the result, or {error} with a 4xx/5xx status.
+ * JSON: the result, or {error} with a 4xx/5xx status. A browser's preflight
+ * (OPTIONS) from an allowed origin gets 204.
  */
 export async function handle(request, store, now = Date.now()) {
+  const origin = request.headers.get('origin');
+  const allowed = ALLOWED_ORIGINS.has(origin);
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: allowed ? 204 : 403, headers: allowed ? { ...CORS, 'access-control-allow-origin': origin, vary: 'Origin' } : {} });
+  }
+  const response = await route(request, store, now);
+  response.headers.set('vary', 'Origin');
+  if (allowed) response.headers.set('access-control-allow-origin', origin);
+  return response;
+}
+
+async function route(request, store, now) {
   if (request.method !== 'POST') return fail(405, 'post-only');
+  // JSON only: a page on another site could send text/plain without a preflight, and so without CORS.
+  if (!/^application\/json\b/i.test(request.headers.get('content-type') ?? '')) return fail(415, 'json-only');
   const text = await request.text();
   if (text.length > LIMITS.bodyBytes) return fail(413, 'too-big');
   let body;

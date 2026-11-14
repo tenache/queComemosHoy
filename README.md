@@ -31,7 +31,12 @@ python -m http.server 8000
 
 y después abrí <http://localhost:8000> en el navegador.
 
-Así anda todo menos el grupo de amigos, que necesita la función de Netlify (`/api/group`). Para probarlo está el deploy preview de cada PR, que usa sus propios datos, aparte de los grupos de verdad. Desde `localhost` la app nunca envía lo que elegís.
+Así anda todo menos el grupo de amigos, que necesita la función de Netlify (`/api/group`). Para probarlo está el deploy preview de cada PR, que usa sus propios datos, aparte de los grupos de verdad (los previews son privados: hay que entrar con la cuenta de Netlify). Desde `localhost` la app nunca envía lo que elegís.
+
+### Dónde está publicada
+
+- **La app:** GitHub Pages publica `main` en <https://tenache.github.io/queComemosHoy/>. Esa es la dirección que se instala en el teléfono, y los datos de cada teléfono quedan guardados para esa dirección.
+- **La función del grupo de amigos:** en Netlify, en `https://quecomemoshoy89.netlify.app/api/group`. Netlify también publica `main` (es lo que corre la función), pero la app se usa desde GitHub Pages, que la llama ahí. La función solo acepta llamadas de páginas de `tenache.github.io` (CORS).
 
 ### Cómo instalarla
 
@@ -54,7 +59,7 @@ node --test
 Los números con los que la app elige (los pesos del puntaje, la ruleta, la variedad…) se leen en tres capas, y cada una pisa a la anterior:
 
 1. **El código** (`js/scoring.js`, `js/wheel.js`): los valores revisados.
-2. **`params.json`**: valores para todos los teléfonos. Se edita en GitHub (el lápiz ✏️ sobre el archivo) y se guarda directo en `main`, **sin issue, PR ni revisión**. Es la única excepción al proceso, y solo para cambios que no tocan nada más que `params.json`. Netlify lo publica en un par de minutos, y cada teléfono lo lee la próxima vez que abre la app (no hace falta cambiar `VERSION` en `sw.js`).
+2. **`params.json`**: valores para todos los teléfonos. Se edita en GitHub (el lápiz ✏️ sobre el archivo) y se guarda directo en `main`, **sin issue, PR ni revisión**. Es la única excepción al proceso, y solo para cambios que no tocan nada más que `params.json`. GitHub Pages lo publica en un par de minutos, y cada teléfono lo lee la próxima vez que abre la app (no hace falta cambiar `VERSION` en `sw.js`).
 3. **Este teléfono**: Ajustes → Ajustes finos. Se nota al instante, con una vista previa, y vale solo en ese teléfono. "Copiar mis valores" da las líneas para pegar en `params.json`.
 
 Un ejemplo de `params.json`:

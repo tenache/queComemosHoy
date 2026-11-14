@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LIMITS, dayOf, handle, memberIdOf, prune } from '../netlify/group-core.mjs';
+import { ALLOWED_ORIGINS, LIMITS, dayOf, handle, memberIdOf, prune } from '../netlify/group-core.mjs';
 import { CODE_ALPHABET, flushQueue, queuePick, queueUnpick } from '../js/group.js';
 
 const NOW = Date.UTC(2026, 10, 14, 20, 0, 0);
@@ -32,7 +32,8 @@ function memoryStore() {
 }
 
 async function call(store, body, now = NOW, method = 'POST') {
-  const init = method === 'POST' ? { method, body: typeof body === 'string' ? body : JSON.stringify(body) } : { method };
+  const headers = { 'content-type': 'application/json' };
+  const init = method === 'POST' ? { method, headers, body: typeof body === 'string' ? body : JSON.stringify(body) } : { method };
   const res = await handle(new Request('https://example.netlify.app/api/group', init), store, now);
   return { status: res.status, data: await res.json() };
 }
@@ -323,4 +324,54 @@ test("leave after the day's first list (which marks you seen with a new key): no
   await call(store, { action: 'list', code, secret: NICO }, NOW + DAY);
   await call(store, { action: 'leave', code, secret: NICO }, NOW + DAY);
   assert.ok(![...store.data.keys()].some((k) => k.includes(memberIdOf(NICO))));
+});
+
+const PAGES = 'https://tenache.github.io';
+const fromOrigin = (origin, method = 'POST', body = { action: 'create', secret: ANA, name: 'Ana' }) =>
+  handle(
+    new Request('https://quecomemoshoy89.netlify.app/api/group', {
+      method,
+      headers: { 'content-type': 'application/json', ...(origin ? { origin } : {}) },
+      ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
+    }),
+    memoryStore(),
+    NOW,
+  );
+
+test('CORS: the GitHub Pages app may call the function, after a preflight', async () => {
+  assert.ok(ALLOWED_ORIGINS.has(PAGES));
+  const preflight = await fromOrigin(PAGES, 'OPTIONS');
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), PAGES);
+  assert.equal(preflight.headers.get('access-control-allow-methods'), 'POST');
+  assert.equal(preflight.headers.get('access-control-allow-headers'), 'content-type');
+  const res = await fromOrigin(PAGES);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('access-control-allow-origin'), PAGES);
+  const refused = await fromOrigin(PAGES, 'POST', { action: 'nope' }); // errors carry the header too, so the app can read them
+  assert.equal(refused.headers.get('access-control-allow-origin'), PAGES);
+});
+
+test('CORS: any other site gets no CORS headers, so its pages cannot use the function', async () => {
+  const preflight = await fromOrigin('https://evil.example', 'OPTIONS');
+  assert.equal(preflight.status, 403);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), null);
+  for (const origin of ['https://evil.example', 'https://tenache.github.io.evil.example', null]) {
+    assert.equal((await fromOrigin(origin)).headers.get('access-control-allow-origin'), null, String(origin));
+  }
+});
+
+test('JSON only: a text/plain POST (which another site could send without a preflight) is refused', async () => {
+  const store = memoryStore();
+  const res = await handle(
+    new Request('https://quecomemoshoy89.netlify.app/api/group', {
+      method: 'POST',
+      headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
+      body: JSON.stringify({ action: 'create', secret: ANA, name: 'Ana' }),
+    }),
+    store,
+    NOW,
+  );
+  assert.equal(res.status, 415);
+  assert.equal(store.data.size, 0);
 });
