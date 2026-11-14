@@ -29,6 +29,7 @@ import {
 import {
   cleanName,
   createGroup,
+  dropQueuedPicks,
   flushQueue,
   formatCode,
   isLocalHost,
@@ -1165,25 +1166,32 @@ function viewSettings() {
 
 // ---- Friends' group (group.js, #23) ---------------------------------------
 
-let flushing = false;
+let flushing = null; // the run of flushQueue() under way, if any
 
 /** Sends the picks waiting in the queue. Safe to call often: one run at a time. */
-async function flushGroup() {
-  if (flushing || ui.readOnly || !state.settings.group?.queue.length) return;
-  flushing = true;
-  let result;
-  try {
-    result = await flushQueue(
-      () => state.settings.group,
-      () => saveState(state),
-    );
-  } finally {
-    flushing = false;
-  }
-  if (result === 'gone') leftGroup(t('groupGone'));
-  // A pick queued while the last call was out: send it too.
-  else if (result === 'done' && state.settings.group?.queue.length) flushGroup();
-  else if (ui.tab === 'settings' && !ui.editing) render(); // the "waiting" line
+function flushGroup() {
+  if (flushing || ui.readOnly || !state.settings.group?.queue.length) return flushing;
+  flushing = flushQueue(
+    () => state.settings.group,
+    () => saveState(state),
+  ).finally(() => {
+    flushing = null;
+  });
+  return flushing.then((result) => {
+    if (result === 'gone') leftGroup(t('groupGone'));
+    // A pick queued while the last call was out: send it too.
+    else if (result === 'done' && state.settings.group?.queue.length) flushGroup();
+    else if (canRedrawSettings()) render(); // the "waiting" line
+  });
+}
+
+/**
+ * Ajustes can be drawn again without getting in the way: it's showing, and
+ * nobody is typing in it (a redraw replaces the inputs, closing the keyboard
+ * and losing a number not confirmed yet).
+ */
+function canRedrawSettings() {
+  return ui.tab === 'settings' && !ui.editing && !document.activeElement?.closest?.('#view input, #view textarea, #view select');
 }
 
 function leftGroup(message = null) {
@@ -1201,8 +1209,10 @@ async function refreshGroupMembers() {
   const res = await listGroup(group);
   if (state.settings.group !== group) return;
   if (res.status === 403 && res.data?.error === 'not-member') return leftGroup(t('groupGone'));
-  if (res.ok) ui.groupList = res.data;
-  if (ui.tab === 'settings' && !ui.editing) render();
+  if (!res.ok) return;
+  const before = JSON.stringify([ui.groupList?.you, ui.groupList?.members]);
+  ui.groupList = res.data;
+  if (JSON.stringify([res.data.you, res.data.members]) !== before && canRedrawSettings()) render();
 }
 
 function groupError({ status, data }) {
@@ -1259,6 +1269,10 @@ async function leaveMyGroup() {
   if (!window.confirm(t('groupLeaveConfirm'))) return;
   ui.groupForm.busy = true;
   render();
+  // Nothing more goes out, and a pick already on its way lands before the leave deletes it.
+  group.queue = [];
+  saveState(state);
+  await flushing;
   const res = await leaveGroup(group);
   ui.groupForm.busy = false;
   // Not in it on the server either: nothing left there to delete.
@@ -1351,6 +1365,7 @@ function groupSection() {
         disabled: ui.readOnly,
         onchange: (e) => {
           group.sharing = e.target.checked;
+          if (!group.sharing) dropQueuedPicks(group);
           commit();
         },
       }),

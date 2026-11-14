@@ -8,6 +8,7 @@ import {
   GROUP,
   cleanGroup,
   cleanName,
+  dropQueuedPicks,
   flushQueue,
   formatCode,
   isLocalHost,
@@ -103,15 +104,34 @@ test('shouldShare: starter dishes only, in a group, with sharing on, never from 
   assert.equal(shouldShare(group(), 'milanesas-pure', 'localhost'), false);
 });
 
-test('queueUnpick: a pick not sent yet just leaves the queue; a sent one is taken back', () => {
+test('queueUnpick: a pick waiting behind another just leaves the queue; a sent one is taken back', () => {
   const g = group();
-  const first = queuePick(g, 'pizza', NOW, 'pick000001');
+  queuePick(g, 'pizza', NOW, 'pick000001');
   queuePick(g, 'paella', NOW, 'pick000002');
-  queueUnpick(g, first);
-  assert.deepEqual(g.queue, [{ op: 'pick', pickId: 'pick000002', dishId: 'paella', time: NOW }]);
-  g.queue = []; // sent
   queueUnpick(g, 'pick000002');
-  assert.deepEqual(g.queue, [{ op: 'unpick', pickId: 'pick000002' }]);
+  assert.deepEqual(g.queue, [{ op: 'pick', pickId: 'pick000001', dishId: 'pizza', time: NOW }]);
+  g.queue = []; // sent
+  queueUnpick(g, 'pick000001');
+  assert.deepEqual(g.queue, [{ op: 'unpick', pickId: 'pick000001' }]);
+});
+
+test('queueUnpick: the first pick may be on its way, so it stays and the unpick goes after it', () => {
+  const g = group();
+  queuePick(g, 'pizza', NOW, 'pick000001');
+  queueUnpick(g, 'pick000001');
+  assert.deepEqual(g.queue, [
+    { op: 'pick', pickId: 'pick000001', dishId: 'pizza', time: NOW },
+    { op: 'unpick', pickId: 'pick000001' },
+  ]);
+});
+
+test('dropQueuedPicks: sharing off sends no more picks, but still takes back the ones sent', () => {
+  const g = group();
+  queuePick(g, 'pizza', NOW, 'pick000001');
+  queueUnpick(g, 'pick000009');
+  queuePick(g, 'paella', NOW, 'pick000002');
+  dropQueuedPicks(g);
+  assert.deepEqual(g.queue, [{ op: 'unpick', pickId: 'pick000009' }]);
 });
 
 test('queuePick: when the queue is full, the oldest call goes', () => {
@@ -165,6 +185,27 @@ test('flushQueue: a refused call is dropped, since sending it again gets the sam
   const { fetchImpl, sent } = fakeFetch([[429, { error: 'too-many' }]]);
   assert.equal(await flushQueue(() => g, () => {}, fetchImpl), 'done');
   assert.equal(sent.length, 2);
+  assert.deepEqual(g.queue, []);
+});
+
+test("flushQueue: Netlify's rate limit (a 429 with no 'too-many') keeps the call for later", async () => {
+  const g = group();
+  queuePick(g, 'pizza', NOW, 'pick000001');
+  const { fetchImpl } = fakeFetch([[429, 'Too Many Requests']]);
+  assert.equal(await flushQueue(() => g, () => {}, fetchImpl), 'later');
+  assert.equal(g.queue.length, 1);
+});
+
+test('flushQueue: Deshacer while the pick is on its way still takes it back', async () => {
+  const g = group();
+  queuePick(g, 'pizza', NOW, 'pick000001');
+  const { fetchImpl, sent } = fakeFetch([]);
+  const slow = async (url, init) => {
+    if (sent.length === 0) queueUnpick(g, 'pick000001'); // tapped while the first call is out
+    return fetchImpl(url, init);
+  };
+  assert.equal(await flushQueue(() => g, () => {}, slow), 'done');
+  assert.deepEqual(sent.map((s) => s.action), ['pick', 'unpick']);
   assert.deepEqual(g.queue, []);
 });
 

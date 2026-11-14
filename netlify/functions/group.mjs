@@ -1,14 +1,14 @@
-// The friends' group (#23): POST /api/group. The logic is in ../group-core.mjs;
-// this file only picks the store. Deploy previews and branch deploys get their
-// own store, so testing a PR never reaches real groups.
-
-import { getStore } from '@netlify/blobs';
+// The friends' group (#23): POST /api/group. The logic is in ../group-core.mjs,
+// the store in ../store.mjs.
 
 import { handle } from '../group-core.mjs';
+import { groupStore } from '../store.mjs';
 
-export default async (request, context) => {
-  const name = context.deploy?.context === 'production' ? 'groups' : 'groups-preview';
-  return handle(request, getStore({ name, consistency: 'strong' }));
+export default async (request, context) => handle(request, groupStore(context));
+
+export const config = {
+  path: '/api/group',
+  // Per phone (IP): a phone lists every few minutes and sends a pick now and
+  // then, so this only stops someone hammering the endpoint. Netlify answers 429.
+  rateLimit: { windowLimit: 60, windowSize: 60, aggregateBy: ['ip', 'domain'] },
 };
-
-export const config = { path: '/api/group' };

@@ -97,11 +97,20 @@ export function queuePick(group, dishId, time, pickId = newPickId()) {
   return pickId;
 }
 
-/** Takes a pick back: from the queue if it wasn't sent yet, else from the server. */
+/**
+ * Takes a pick back: from the queue if it wasn't sent yet, else from the
+ * server. The first call in the queue may be on its way right now, so a pick
+ * there stays, and the unpick goes after it.
+ */
 export function queueUnpick(group, pickId) {
   const waiting = group.queue.findIndex((o) => o.op === 'pick' && o.pickId === pickId);
-  if (waiting >= 0) group.queue.splice(waiting, 1);
+  if (waiting > 0) group.queue.splice(waiting, 1);
   else group.queue.push({ op: 'unpick', pickId });
+}
+
+/** "Compartir mis elecciones" turned off: picks not sent yet never will be. Unpicks still go. */
+export function dropQueuedPicks(group) {
+  group.queue = group.queue.filter((o) => o.op !== 'pick');
 }
 
 /** One call to the group function. → {ok, status, data}, with status 0 when the network failed. */
@@ -137,8 +146,9 @@ export const listGroup = (group, fetchImpl) => callGroup({ action: 'list', code:
  * import, another tab): each sent call is removed from that group's queue,
  * and `save()` runs after each one.
  *
- * Stops at a network failure or a server error (5xx), to try again later.
- * Any other answer drops the call, since sending it again would get the same
+ * Stops at a network failure, a server error (5xx) or Netlify's rate limit
+ * (a 429 that isn't the function's own "too-many"), to try again later. Any
+ * other answer drops the call, since sending it again would get the same
  * answer. Returns 'gone' when the server says this phone isn't in the group,
  * 'later' when it stopped early, and 'done' otherwise.
  */
@@ -149,7 +159,7 @@ export async function flushQueue(getGroup, save, fetchImpl = globalThis.fetch) {
     if (!op) return 'done';
     const { op: action, ...fields } = op;
     const res = await callGroup({ action, code: group.code, secret: group.secret, ...fields }, fetchImpl);
-    if (res.status === 0 || res.status >= 500) return 'later';
+    if (res.status === 0 || res.status >= 500 || (res.status === 429 && res.data?.error !== 'too-many')) return 'later';
     const current = getGroup();
     if (!current || current.code !== group.code || current.secret !== group.secret) return 'done';
     if (res.status === 403 && res.data?.error === 'not-member') return 'gone';
