@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  FUNCTION_ORIGIN,
   GROUP,
+  apiUrl,
   cleanGroup,
   cleanName,
   dropQueuedPicks,
@@ -226,4 +228,13 @@ test('flushQueue: a group replaced while a call is out (an import, another tab) 
   };
   assert.equal(await flushQueue(() => current, () => {}, fetchImpl), 'done');
   assert.deepEqual(other.queue, [{ op: 'unpick', pickId: 'pick000001' }]);
+});
+
+test('apiUrl: from GitHub Pages, the function on Netlify; on Netlify itself or localhost, its own address', () => {
+  assert.equal(apiUrl({ hostname: 'tenache.github.io' }), `${FUNCTION_ORIGIN}/api/group`);
+  assert.equal(FUNCTION_ORIGIN, 'https://quecomemoshoy89.netlify.app');
+  for (const hostname of ['quecomemoshoy89.netlify.app', 'deploy-preview-27--quecomemoshoy89.netlify.app', 'localhost', '127.0.0.1']) {
+    assert.equal(apiUrl({ hostname }), './api/group', hostname);
+  }
+  assert.equal(apiUrl(undefined), './api/group'); // node, in these tests
 });

@@ -14,7 +14,17 @@ export const GROUP = {
 };
 // No 0/O or 1/I/L, so a code read aloud or copied by hand can't be mistyped.
 export const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
-export const API_URL = './api/group';
+
+// The app is published by GitHub Pages, and the group function lives on
+// Netlify (#26). On Netlify itself (a deploy preview, with its own store) and
+// on localhost, the app calls the function on its own address.
+export const FUNCTION_ORIGIN = 'https://quecomemoshoy89.netlify.app';
+
+/** Where the group function is, seen from a page at `location` (none in the tests: the relative address). */
+export function apiUrl(location = globalThis.location) {
+  const host = location?.hostname ?? '';
+  return host.endsWith('github.io') ? `${FUNCTION_ORIGIN}/api/group` : './api/group';
+}
 
 // Only starter dishes are shared: every phone has them, under the same id.
 const STARTER_IDS = new Set(STARTER_DISHES.map((d) => d.id));
@@ -146,7 +156,7 @@ export function dropQueuedPicks(group) {
 export async function callGroup(body, fetchImpl = globalThis.fetch) {
   let response;
   try {
-    response = await fetchImpl(API_URL, {
+    response = await fetchImpl(apiUrl(), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
