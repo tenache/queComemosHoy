@@ -89,7 +89,7 @@ HTML, CSS y JavaScript sin framework ni build.
 | `js/app.js` | La interfaz. |
 | `sw.js` | El service worker: guarda la app para usarla sin conexión. |
 | `netlify/functions/group.mjs` | La función del grupo de amigos (`/api/group`), con un límite de pedidos por teléfono. |
-| `netlify/functions/prune.mjs` | Una vez por día borra lo que no se guarda: platos de más de 3 días, platos de quien salió, y quien no abre la app hace 60 días. |
+| `netlify/functions/prune.mjs` | Cada hora borra lo que no se guarda: platos de más de 3 días, platos de quien salió, y quien no abre la app hace 60 días. |
 | `netlify/store.mjs` | El almacén de los grupos. Los deploy previews usan otro, así las pruebas no llegan a los grupos de verdad. |
 | `netlify/group-core.mjs` | Lo que hacen las funciones: crear el grupo, unirse, salir, guardar y borrar elecciones, y la limpieza diaria. Todo vive en las claves de Netlify Blobs. |
 | `netlify.toml`, `package.json` | La configuración de Netlify y la única dependencia, `@netlify/blobs`, solo para la función: la app sigue sin compilar nada. |

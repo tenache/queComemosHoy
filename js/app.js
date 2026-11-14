@@ -129,7 +129,7 @@ const ui = {
   installPrompt: null,
   tuningOpen: false, // the "Ajustes finos" section is expanded
   tuningCopied: false,
-  groupForm: { name: '', code: '', error: null, busy: false }, // Ajustes → Grupo de amigos
+  groupForm: { name: '', code: '', error: null, busy: false }, // Ajustes → Grupo de amigos (+ secret: kept so a retried join is the same member)
   groupList: readCachedGroupList(), // {code, time, you, members, picks}: the group function's last list
   friends: null, // dishId while the "💞 También lo eligieron" sheet is open
   groupInvited: false, // the invitation was copied ("Copiar")
@@ -1236,7 +1236,7 @@ function currentGroupList() {
 
 // How often the 💞 are fetched again while the app stays open.
 const GROUP_REFRESH_MS = 3 * 60 * 1000;
-let listing = false;
+let listing = null; // the list call on its way, if any: leaving waits for it
 
 /**
  * Fetches who is in the group and what they picked: for the 💞 on the card,
@@ -1247,13 +1247,14 @@ async function refreshGroupList(force = false) {
   const group = state.settings.group;
   if (!group || listing || ui.readOnly) return;
   const last = currentGroupList();
-  if (!force && last && Date.now() - last.time < GROUP_REFRESH_MS) return;
-  listing = true;
+  // A little slack: `time` is when the last answer came, so the 3-minute timer would skip every other tick.
+  if (!force && last && Date.now() - last.time < GROUP_REFRESH_MS - 10_000) return;
+  listing = listGroup(group);
   let res;
   try {
-    res = await listGroup(group);
+    res = await listing;
   } finally {
-    listing = false;
+    listing = null;
   }
   if (state.settings.group !== group) return;
   if (res.status === 403 && res.data?.error === 'not-member') return leftGroup(t('groupGone'));
@@ -1327,7 +1328,9 @@ function enterGroup(create) {
   const code = create ? null : normalizeCode(form.code);
   form.error = !name ? t('groupNameMissing') : !create && !code ? t('groupBadCode') : null;
   if (form.error) return render();
-  const secret = newSecret();
+  // A join retried after a lost answer must be the same member (the server then just
+  // renames), not a second one: the form keeps its secret until it's reset.
+  const secret = create ? newSecret() : (form.secret ??= newSecret());
   groupCall(create ? createGroup(secret, name) : joinGroup(code, secret, name), (data) => {
     state.settings.group = { code: data.code, secret, name, sharing: true, queue: [] };
     setGroupList(data.code, data);
@@ -1355,16 +1358,22 @@ async function leaveMyGroup() {
   if (!window.confirm(t('groupLeaveConfirm'))) return;
   ui.groupForm.busy = true;
   render();
-  // Nothing more goes out, and a pick already on its way lands before the leave deletes it.
+  // Nothing more goes out. A pick on its way lands before the leave deletes it, and
+  // a list on its way can't mark you "seen today" (a new key) after the leave.
+  const unpicks = group.queue.filter((o) => o.op === 'unpick');
   group.queue = [];
   saveState(state);
   await flushing;
+  await listing;
   const res = await leaveGroup(group);
   ui.groupForm.busy = false;
   // Not in it on the server either: nothing left there to delete.
   if (res.ok || (res.status === 403 && res.data?.error === 'not-member')) return leftGroup();
+  // Still in the group: picks already taken back with "Deshacer" must still go.
+  group.queue = [...unpicks, ...group.queue];
   ui.groupForm.error = res.status === 0 ? t('groupOfflineLeave') : t('groupError');
-  render();
+  commit();
+  flushGroup();
 }
 
 /** The invitation: the app's address, the steps and the code. */

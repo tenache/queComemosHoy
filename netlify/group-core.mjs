@@ -8,7 +8,7 @@
 // memberId is a hash of the phone's secret, so the group sees ids and names
 // but never secrets. Picks older than LIMITS.keepDays, picks of people no
 // longer in the group, and members not seen for LIMITS.inactiveDays are
-// deleted by prune(), which runs every day (functions/prune.mjs) and on each
+// deleted by prune(), which runs every hour (functions/prune.mjs) and on each
 // pick. Pure: the store comes in as an argument (getStore() on Netlify, a Map
 // in the tests).
 
