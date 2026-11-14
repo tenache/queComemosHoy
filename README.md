@@ -18,7 +18,7 @@ Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en e
 - **Aprende de lo que elegís.** Lo que cocinás sube, lo que rechazás baja, y nada desaparece salvo que marques "No mostrar nunca": hasta la comida menos querida vuelve a salir cada tanto.
 - **No repite.** Baja las comidas que comiste hace poco y las que comparten ingrediente principal con lo de ayer.
 - **Lista de compras.** Lo que marcás como faltante queda anotado hasta que toques "Comprado".
-- **Grupo de amigos 💞.** En Ajustes creás un grupo y pasás su código, o te unís con el código que te pasaron. Desde ahí, los platos de la app que elegís se comparten con el grupo, con tu nombre. Cuando la tarjeta muestra un plato que eligió alguien del grupo hoy o ayer, tiene un 💞: tocalo y ves quién. Esos platos salen más seguido: un amigo suma 0,75 al puntaje, y con más amigos sube hacia 2 (se ajusta en Ajustes finos). Se puede pausar ("Compartir mis elecciones") y salir del grupo, que borra tus platos del servidor.
+- **Grupo de amigos 💞.** En Ajustes creás un grupo y pasás su código, o te unís con el código que te pasaron. Desde ahí, los platos de la app que elegís se comparten con el grupo, con tu nombre. Cuando la tarjeta muestra un plato que eligió alguien del grupo hoy o ayer, tiene un 💞: tocalo y ves quién. Esos platos salen más seguido: un amigo suma 0,75 al puntaje, y con más amigos sube hacia 2 (se ajusta en Ajustes finos). Se puede pausar ("Compartir mis elecciones") y salir del grupo, que borra tus platos del servidor. Los platos se borran solos a los 3 días, y quien no abre la app en 60 días sale del grupo.
 - **Todo queda en tu dispositivo,** salvo lo que compartís con tu grupo, si te unís a uno. No hay cuentas. En Ajustes podés exportar e importar una copia en JSON (el grupo no va en la copia).
 
 ### Cómo correrla
@@ -88,8 +88,10 @@ HTML, CSS y JavaScript sin framework ni build.
 | `js/group.js` | El grupo de amigos en el teléfono: el código, el nombre, y la cola de elecciones que esperan para enviarse. |
 | `js/app.js` | La interfaz. |
 | `sw.js` | El service worker: guarda la app para usarla sin conexión. |
-| `netlify/functions/group.mjs` | La función del grupo de amigos (`/api/group`). Los deploy previews usan otro almacén, así las pruebas no llegan a los grupos de verdad. |
-| `netlify/group-core.mjs` | Lo que hace la función: crear el grupo, unirse, salir, guardar y borrar elecciones (las de más de 3 días se borran solas). Todo vive en las claves de Netlify Blobs. |
+| `netlify/functions/group.mjs` | La función del grupo de amigos (`/api/group`), con un límite de pedidos por teléfono. |
+| `netlify/functions/prune.mjs` | Una vez por día borra lo que no se guarda: platos de más de 3 días, platos de quien salió, y quien no abre la app hace 60 días. |
+| `netlify/store.mjs` | El almacén de los grupos. Los deploy previews usan otro, así las pruebas no llegan a los grupos de verdad. |
+| `netlify/group-core.mjs` | Lo que hacen las funciones: crear el grupo, unirse, salir, guardar y borrar elecciones, y la limpieza diaria. Todo vive en las claves de Netlify Blobs. |
 | `netlify.toml`, `package.json` | La configuración de Netlify y la única dependencia, `@netlify/blobs`, solo para la función: la app sigue sin compilar nada. |
 | `revisar/` | Una página aparte (no es parte de la app ni se instala) para revisar con quien cocina cuánto trabajo da cada comida inicial y con qué se acompaña. Se abre en `/revisar/`. |
 | `test/` | Las pruebas. |

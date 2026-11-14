@@ -63,15 +63,14 @@ export const MOOD_IDS = ['lazy', 'rushed', 'yum', 'healthy', 'different', 'usual
 
 // Friends' picks (#23): a main that n friends picked today or yesterday gets
 // friendsBoost(n), a logistic curve that starts at `first` for one friend and
-// grows toward `max` at `rate` (Thomas, 2026-11-14): 0.75, 1.24, 1.63, 1.85,
-// 1.94 … → 2. No rule ties it to health.
+// moves toward `max` at `rate` (Thomas, 2026-11-14): 0.75, 1.24, 1.63, 1.85,
+// 1.94 … → 2. A `first` above `max` comes down toward it. No rule ties it to health.
 export const FRIENDS = { first: 0.75, max: 2, rate: 1 };
 
 /** The boost for a main that `n` friends picked. 0 for none. */
 export function friendsBoost(n) {
   const { first, max, rate } = FRIENDS;
   if (!(n >= 1) || first <= 0 || max <= 0) return 0;
-  if (first >= max) return max;
   return max / (1 + (max / first - 1) * Math.exp(-rate * (n - 1)));
 }
 

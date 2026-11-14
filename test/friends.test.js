@@ -23,9 +23,11 @@ test('friendsBoost: 0.75 for one friend, then the logistic curve toward 2 (r = 1
 test('friendsBoost: odd tuning stays sane (no NaN, never negative)', () => {
   const saved = { ...FRIENDS };
   try {
-    Object.assign(FRIENDS, { first: 3, max: 2 }); // first above max: flat at max
-    assert.equal(friendsBoost(1), 2);
-    assert.equal(friendsBoost(5), 2);
+    Object.assign(FRIENDS, { first: 3, max: 2 }); // first above max: one friend gives first, more come down toward max
+    assert.equal(friendsBoost(1), 3);
+    assert.ok(friendsBoost(2) < 3 && friendsBoost(2) > friendsBoost(5) && friendsBoost(5) > 2);
+    Object.assign(FRIENDS, { first: 2, max: 2 });
+    assert.equal(friendsBoost(4), 2);
     Object.assign(FRIENDS, { first: 0.75, max: 0 });
     assert.equal(friendsBoost(1), 0);
     Object.assign(FRIENDS, { first: 0, max: 2 });

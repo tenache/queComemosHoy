@@ -196,7 +196,7 @@ const STRINGS = {
     groupTitle: 'Grupo de amigos 💞',
     groupHelp: 'Con un grupo, ves un 💞 en los platos que eligió alguien del grupo hoy o ayer, y esos platos salen un poco más seguido.',
     groupPrivacy:
-      'Se comparte tu nombre y los platos de la app que elegís (no los que agregaste vos). Los ve solo tu grupo, y se borran solos a los 3 días o cuando salís del grupo.',
+      'Se comparte tu nombre y los platos de la app que elegís (no los que agregaste vos), y los ve solo tu grupo. Los platos se borran solos a los 3 días. Tu nombre, cuando salís del grupo o si pasan 60 días sin que abras la app.',
     groupYourName: 'Tu nombre',
     groupCreate: 'Crear un grupo',
     groupCodeLabel: 'Código del grupo',

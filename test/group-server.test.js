@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LIMITS, handle, memberIdOf } from '../netlify/group-core.mjs';
+import { LIMITS, dayOf, handle, memberIdOf, prune } from '../netlify/group-core.mjs';
 import { CODE_ALPHABET, flushQueue, queuePick, queueUnpick } from '../js/group.js';
 
 const NOW = Date.UTC(2026, 10, 14, 20, 0, 0);
@@ -105,14 +105,22 @@ test('pick: the group sees who picked what, and when', async () => {
   assert.deepEqual(data.picks, [{ member: memberIdOf(NICO), dishId: 'milanesas-pure', time: NOW }]);
 });
 
-test('pick: only members, only well-formed picks, never in the future', async () => {
+test('pick: only members, only well-formed picks', async () => {
   const store = memoryStore();
   const code = await groupOf(store, [ANA, 'Ana']);
   assert.equal((await pick(store, code, NICO, 'pick000001')).data.error, 'not-member');
   assert.equal((await pick(store, code, ANA, 'p/1')).data.error, 'bad-pick');
   assert.equal((await pick(store, code, ANA, 'pick000001', 'Milanesas/con puré')).data.error, 'bad-pick');
-  assert.equal((await pick(store, code, ANA, 'pick000001', 'pizza', NOW + 11 * 60 * 1000)).data.error, 'bad-time');
-  assert.equal((await pick(store, code, ANA, 'pick000001', 'pizza', NOW + 5 * 60 * 1000)).status, 200);
+  assert.equal((await pick(store, code, ANA, ['pick000001'])).data.error, 'bad-pick');
+  assert.equal((await pick(store, code, ANA, 'pick000001', 'pizza', String(NOW))).data.error, 'bad-pick');
+});
+
+test('pick: a phone whose clock runs ahead picked now, not in the future', async () => {
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana'], [NICO, 'Nico']);
+  assert.equal((await pick(store, code, ANA, 'pick000001', 'pizza', NOW + 60 * 60 * 1000)).status, 200);
+  const { data } = await call(store, { action: 'list', code, secret: NICO });
+  assert.deepEqual(data.picks, [{ member: memberIdOf(ANA), dishId: 'pizza', time: NOW }]);
 });
 
 test('pick: the same pick sent twice (a retry) is kept once', async () => {
@@ -222,4 +230,88 @@ test('end to end: picks queued on one phone reach the other through the function
   assert.deepEqual(nico.queue, []);
   const { data } = await call(store, { action: 'list', code, secret: ANA });
   assert.deepEqual(data.picks, [{ member: memberIdOf(NICO), dishId: 'milanesas-pure', time: NOW }]);
+});
+
+/** memoryStore() with every call taking a few ms, so calls overlap like they do on Netlify. */
+function slowStore() {
+  const store = memoryStore();
+  const later = (fn) => async (...args) => {
+    await new Promise((r) => setTimeout(r, 1 + Math.random() * 4));
+    return fn(...args);
+  };
+  return { data: store.data, set: later(store.set), delete: later(store.delete), list: later(store.list) };
+}
+
+test('rename, and the daily "seen" mark: you are never missing from the group, not even between two writes', async () => {
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana'], [NICO, 'Nico']);
+  const prefix = `g/${code}/m/${memberIdOf(NICO)}/`;
+  const missing = [];
+  const del = store.delete;
+  store.delete = async (key) => {
+    await del(key);
+    if (![...store.data.keys()].some((k) => k.startsWith(prefix))) missing.push(key);
+  };
+  await call(store, { action: 'join', code, secret: NICO, name: 'Nicolás' }); // a new name
+  await call(store, { action: 'list', code, secret: NICO }, NOW + DAY); // a new day
+  assert.deepEqual(missing, []);
+  assert.equal([...store.data.keys()].filter((k) => k.startsWith(prefix)).length, 1);
+});
+
+test(`join: the ${LIMITS.members}-member ceiling holds when many join at once`, async () => {
+  const store = slowStore();
+  const code = await groupOf(store, [ANA, 'Ana']);
+  const joins = await Promise.all(Array.from({ length: 40 }, (_, i) => call(store, { action: 'join', code, secret: secret(500 + i), name: `P${i}` })));
+  const { data } = await call(store, { action: 'list', code, secret: ANA });
+  assert.ok(data.members.length <= LIMITS.members, `${data.members.length} members`);
+  // Everyone told "full" is really out; everyone let in is really in.
+  const ids = new Set(data.members.map((m) => m.id));
+  joins.forEach((res, i) => assert.equal(ids.has(memberIdOf(secret(500 + i))), res.status === 200));
+});
+
+test(`pick: the ${LIMITS.picksPerMember}-pick cap holds when many arrive at once`, async () => {
+  const store = slowStore();
+  const code = await groupOf(store, [ANA, 'Ana']);
+  await Promise.all(Array.from({ length: 80 }, (_, i) => pick(store, code, ANA, `pick${String(i).padStart(6, '0')}`)));
+  const stored = [...store.data.keys()].filter((k) => k.includes('/p/'));
+  assert.ok(stored.length <= LIMITS.picksPerMember, `${stored.length} picks`);
+});
+
+test('leave while a pick is on its way: the group never sees it, and the next clean-up deletes it', async () => {
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana'], [NICO, 'Nico']);
+  // The pick passed the member check just before the leave, and lands just after it.
+  await call(store, { action: 'leave', code, secret: NICO });
+  await store.set(`g/${code}/p/${memberIdOf(NICO)}/pick000001/pizza/${NOW}`, '1');
+  const { data } = await call(store, { action: 'list', code, secret: ANA });
+  assert.deepEqual(data.picks, []);
+  await prune(store, NOW);
+  assert.ok(![...store.data.keys()].some((k) => k.includes('/p/')));
+});
+
+test('prune: a quiet group keeps nothing older than keepDays, with no new pick needed', async () => {
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana'], [NICO, 'Nico']);
+  await pick(store, code, NICO, 'pick000001');
+  assert.equal(await prune(store, NOW + 2 * DAY), 0);
+  assert.equal(await prune(store, NOW + (LIMITS.keepDays + 1) * DAY), 1);
+  assert.ok(![...store.data.keys()].some((k) => k.includes('/p/')));
+});
+
+test(`prune: someone who hasn't opened the app in ${LIMITS.inactiveDays} days leaves the group, with their picks`, async () => {
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana'], [NICO, 'Nico']);
+  const later = NOW + LIMITS.inactiveDays * DAY - DAY;
+  await call(store, { action: 'list', code, secret: ANA }, later); // Ana opens the app; Nico never does
+  assert.ok([...store.data.keys()].some((k) => k.startsWith(`g/${code}/m/${memberIdOf(ANA)}/${dayOf(later)}/`)), 'list marks Ana as seen');
+  await prune(store, NOW + (LIMITS.inactiveDays + 2) * DAY);
+  const { data } = await call(store, { action: 'list', code, secret: ANA }, NOW + (LIMITS.inactiveDays + 2) * DAY);
+  assert.deepEqual(data.members.map((m) => m.name), ['Ana']);
+  assert.equal((await call(store, { action: 'list', code, secret: NICO })).data.error, 'not-member');
+});
+
+test('bad requests: a secret or code that is not a string is refused, not a crash', async () => {
+  const store = memoryStore();
+  assert.equal((await call(store, { action: 'create', secret: [ANA], name: 'Ana' })).data.error, 'bad-secret');
+  assert.equal((await call(store, { action: 'join', secret: ANA, code: ['ABCD2345'], name: 'Ana' })).data.error, 'bad-code');
 });

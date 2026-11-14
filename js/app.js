@@ -29,6 +29,7 @@ import {
 import {
   cleanName,
   createGroup,
+  dropQueuedPicks,
   flushQueue,
   formatCode,
   friendCounts,
@@ -1176,25 +1177,32 @@ function viewSettings() {
 
 // ---- Friends' group (group.js, #23) ---------------------------------------
 
-let flushing = false;
+let flushing = null; // the run of flushQueue() under way, if any
 
 /** Sends the picks waiting in the queue. Safe to call often: one run at a time. */
-async function flushGroup() {
-  if (flushing || ui.readOnly || !state.settings.group?.queue.length) return;
-  flushing = true;
-  let result;
-  try {
-    result = await flushQueue(
-      () => state.settings.group,
-      () => saveState(state),
-    );
-  } finally {
-    flushing = false;
-  }
-  if (result === 'gone') leftGroup(t('groupGone'));
-  // A pick queued while the last call was out: send it too.
-  else if (result === 'done' && state.settings.group?.queue.length) flushGroup();
-  else if (ui.tab === 'settings' && !ui.editing) render(); // the "waiting" line
+function flushGroup() {
+  if (flushing || ui.readOnly || !state.settings.group?.queue.length) return flushing;
+  flushing = flushQueue(
+    () => state.settings.group,
+    () => saveState(state),
+  ).finally(() => {
+    flushing = null;
+  });
+  return flushing.then((result) => {
+    if (result === 'gone') leftGroup(t('groupGone'));
+    // A pick queued while the last call was out: send it too.
+    else if (result === 'done' && state.settings.group?.queue.length) flushGroup();
+    else if (canRedrawSettings()) render(); // the "waiting" line
+  });
+}
+
+/**
+ * Ajustes can be drawn again without getting in the way: it's showing, and
+ * nobody is typing in it (a redraw replaces the inputs, closing the keyboard
+ * and losing a number not confirmed yet).
+ */
+function canRedrawSettings() {
+  return ui.tab === 'settings' && !ui.editing && !document.activeElement?.closest?.('#view input, #view textarea, #view select');
 }
 
 function leftGroup(message = null) {
@@ -1250,12 +1258,16 @@ async function refreshGroupList(force = false) {
   if (state.settings.group !== group) return;
   if (res.status === 403 && res.data?.error === 'not-member') return leftGroup(t('groupGone'));
   if (!res.ok) return;
-  const markBefore = ui.currentId && friendsPicks(currentGroupList(), Date.now()).has(ui.currentId);
+  const before = currentGroupList();
+  const membersBefore = JSON.stringify([before?.you, before?.members]);
+  const markBefore = ui.currentId && friendsPicks(before, Date.now()).has(ui.currentId);
   setGroupList(group.code, res.data);
+  const membersNow = JSON.stringify([res.data.you, res.data.members]);
   const markNow = ui.currentId && friendsPicks(currentGroupList(), Date.now()).has(ui.currentId);
-  // Redraw only where it shows, and never under a finger dragging the card.
-  const dragging = document.querySelector('.card.dragging');
-  if ((ui.tab === 'settings' && !ui.editing) || (ui.tab === 'today' && markBefore !== markNow && !dragging)) render();
+  // Redraw only what changed where it shows: never under someone typing, nor a card being dragged or flying out.
+  const moving = document.querySelector('.card.dragging, .card.flying');
+  if (membersNow !== membersBefore && canRedrawSettings()) render();
+  else if (ui.tab === 'today' && markBefore !== markNow && !moving) render();
 }
 
 function setGroupList(code, data) {
@@ -1343,6 +1355,10 @@ async function leaveMyGroup() {
   if (!window.confirm(t('groupLeaveConfirm'))) return;
   ui.groupForm.busy = true;
   render();
+  // Nothing more goes out, and a pick already on its way lands before the leave deletes it.
+  group.queue = [];
+  saveState(state);
+  await flushing;
   const res = await leaveGroup(group);
   ui.groupForm.busy = false;
   // Not in it on the server either: nothing left there to delete.
@@ -1435,6 +1451,7 @@ function groupSection() {
         disabled: ui.readOnly,
         onchange: (e) => {
           group.sharing = e.target.checked;
+          if (!group.sharing) dropQueuedPicks(group);
           commit();
         },
       }),
@@ -2197,9 +2214,12 @@ window.addEventListener('online', () => {
   flushGroup();
   refreshGroupList();
 });
-// The app can stay open for a long dinner decision: look again now and then.
+// The app can stay open for a long dinner decision: look again now and then,
+// and retry picks that a server error (5xx) or the rate limit held back.
 setInterval(() => {
-  if (document.visibilityState === 'visible') refreshGroupList();
+  if (document.visibilityState !== 'visible') return;
+  refreshGroupList();
+  flushGroup();
 }, GROUP_REFRESH_MS);
 
 checkAfterMeal();
