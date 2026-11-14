@@ -127,7 +127,7 @@ const ui = {
   tuningCopied: false,
   groupForm: { name: '', code: '', error: null, busy: false }, // Ajustes → Grupo de amigos
   groupList: null, // {you, members, picks}: the group function's last answer
-  groupInvited: false, // the invite was copied (no share sheet on this device)
+  groupInvited: false, // the invitation was copied ("Copiar")
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1267,18 +1267,24 @@ async function leaveMyGroup() {
   render();
 }
 
-async function inviteToGroup() {
-  const group = state.settings.group;
+/** The invitation: the app's address, the steps and the code. */
+function inviteText() {
   const url = new URL('./', window.location.href).href;
-  const text = t('groupInviteText', { url, code: formatCode(group.code) });
-  if (navigator.share) {
-    try {
-      await navigator.share({ text });
-    } catch {
-      // The share sheet was closed: nothing to do.
-    }
-    return;
+  return t('groupInviteText', { url, code: formatCode(state.settings.group.code) });
+}
+
+/** "Invitar": the phone's share sheet (WhatsApp…). Only shown where there is one. */
+async function shareInvite() {
+  try {
+    await navigator.share({ text: inviteText() });
+  } catch {
+    // The share sheet was closed: nothing to do.
   }
+}
+
+/** "Copiar": the whole invitation, to paste anywhere. */
+async function copyInvite() {
+  const text = inviteText();
   try {
     await navigator.clipboard.writeText(text);
     ui.groupInvited = true;
@@ -1318,7 +1324,12 @@ function groupSection() {
     h('h2', { class: 'section' }, t('groupTitle')),
     h('p', { class: 'help' }, t('groupHelp')),
     h('p', { class: 'group-code' }, h('span', { class: 'label' }, t('groupCodeLabel')), h('strong', null, formatCode(group.code))),
-    button(ui.groupInvited ? t('groupInvited') : t('groupInvite'), inviteToGroup, 'primary', { disabled: ui.readOnly }),
+    h(
+      'div',
+      { class: 'row' },
+      navigator.share && button(t('groupInvite'), shareInvite, 'primary', { disabled: ui.readOnly }),
+      button(ui.groupInvited ? t('groupInvited') : t('groupCopy'), copyInvite, navigator.share ? '' : 'primary', { disabled: ui.readOnly }),
+    ),
     list && h('p', { class: 'help' }, others.length > 0 ? t('groupMembers', { list: others.join(', ') }) : t('groupAlone')),
     h(
       'div',
