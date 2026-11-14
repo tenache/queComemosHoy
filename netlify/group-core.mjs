@@ -2,7 +2,7 @@
 // starter dishes they picked. Everything lives in the KEYS of a blob store,
 // so one list() call reads a whole group and no two writes touch the same key:
 //
-//   g/<code>/m/<memberId>/<name, URI-encoded>        a member
+//   g/<code>/m/<memberId>/<name, base64url>          a member
 //   g/<code>/p/<memberId>/<pickId>/<dishId>/<time>   a pick
 //
 // memberId is a hash of the phone's secret, so the group sees ids and names
@@ -52,7 +52,7 @@ async function readGroup(store, code) {
   for (const key of await keys(store, `g/${code}/`)) {
     const [, , kind, member, ...rest] = key.split('/');
     if (kind === 'm' && rest.length === 1) {
-      members.push({ id: member, name: decodeURIComponent(rest[0]), key });
+      members.push({ id: member, name: Buffer.from(rest[0], 'base64url').toString(), key });
     } else if (kind === 'p' && rest.length === 3) {
       const [pickId, dishId, time] = rest;
       picks.push({ member, pickId, dishId, time: Number(time), key });
@@ -78,7 +78,8 @@ async function deleteAll(store, list) {
 async function addMember(store, code, group, you, name) {
   // A new name replaces the old one: the member's key holds it.
   await deleteAll(store, group.members.filter((m) => m.id === you).map((m) => m.key));
-  const key = `g/${code}/m/${you}/${encodeURIComponent(name)}`;
+  // base64url: only letters, digits, - and _, which every store keeps as they are (a % in a key does not survive).
+  const key = `g/${code}/m/${you}/${Buffer.from(name).toString('base64url')}`;
   await store.set(key, '1');
   group.members = [...group.members.filter((m) => m.id !== you), { id: you, name, key }];
 }

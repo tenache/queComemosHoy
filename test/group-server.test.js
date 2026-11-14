@@ -192,6 +192,8 @@ test('names: cleaned, at most 30 characters, any character (kept safe in the key
   const store = memoryStore();
   const { data } = await call(store, { action: 'create', secret: ANA, name: 'Ana\u0007 María / la de 💞 y más texto que sobra' });
   assert.equal(data.members[0].name, 'Ana María / la de 💞 y más text');
+  // Netlify Blobs doesn't keep a % in a key as it is (found with its local server): letters, digits, -, _ and / only.
+  assert.ok([...store.data.keys()].every((k) => /^[A-Za-z0-9/_-]+$/.test(k)), [...store.data.keys()].join(' '));
   const half = await call(store, { action: 'create', secret: NICO, name: 'Ni\ud83dco' }); // half an emoji
   assert.equal(half.data.members[0].name, 'Nico');
   const listed = await call(store, { action: 'list', code: data.code, secret: ANA });
