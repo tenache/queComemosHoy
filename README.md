@@ -18,7 +18,8 @@ Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en e
 - **Aprende de lo que elegís.** Lo que cocinás sube, lo que rechazás baja, y nada desaparece salvo que marques "No mostrar nunca": hasta la comida menos querida vuelve a salir cada tanto.
 - **No repite.** Baja las comidas que comiste hace poco y las que comparten ingrediente principal con lo de ayer.
 - **Lista de compras.** Lo que marcás como faltante queda anotado hasta que toques "Comprado".
-- **Todo queda en tu dispositivo.** No hay cuentas ni servidor. En Ajustes podés exportar e importar una copia en JSON.
+- **Grupo de amigos 💞.** En Ajustes creás un grupo y pasás su código, o te unís con el código que te pasaron. Desde ahí, los platos de la app que elegís se comparten con el grupo, con tu nombre. Se puede pausar ("Compartir mis elecciones") y salir del grupo, que borra tus platos del servidor. Los platos se borran solos a los 3 días, y quien no abre la app en 60 días sale del grupo.
+- **Todo queda en tu dispositivo,** salvo lo que compartís con tu grupo, si te unís a uno. No hay cuentas. En Ajustes podés exportar e importar una copia en JSON (el grupo no va en la copia).
 
 ### Cómo correrla
 
@@ -29,6 +30,8 @@ python -m http.server 8000
 ```
 
 y después abrí <http://localhost:8000> en el navegador.
+
+Así anda todo menos el grupo de amigos, que necesita la función de Netlify (`/api/group`). Para probarlo está el deploy preview de cada PR, que usa sus propios datos, aparte de los grupos de verdad. Desde `localhost` la app nunca envía lo que elegís.
 
 ### Cómo instalarla
 
@@ -82,8 +85,14 @@ HTML, CSS y JavaScript sin framework ni build.
 | `js/dishes.js` | Las comidas iniciales, con sus acompañamientos. |
 | `js/recipes.js` | Las recetas de las comidas iniciales. |
 | `js/nutrition.js` | Calorías y macros por 100 g de unos 60 alimentos (redondeados de USDA FoodData Central), el cálculo por porción y la lectura de las líneas de una receta. Módulo puro. |
+| `js/group.js` | El grupo de amigos en el teléfono: el código, el nombre, y la cola de elecciones que esperan para enviarse. |
 | `js/app.js` | La interfaz. |
 | `sw.js` | El service worker: guarda la app para usarla sin conexión. |
+| `netlify/functions/group.mjs` | La función del grupo de amigos (`/api/group`), con un límite de pedidos por teléfono. |
+| `netlify/functions/prune.mjs` | Cada hora borra lo que no se guarda: platos de más de 3 días, platos de quien salió, y quien no abre la app hace 60 días. |
+| `netlify/store.mjs` | El almacén de los grupos. Los deploy previews usan otro, así las pruebas no llegan a los grupos de verdad. |
+| `netlify/group-core.mjs` | Lo que hacen las funciones: crear el grupo, unirse, salir, guardar y borrar elecciones, y la limpieza de cada hora. Todo vive en las claves de Netlify Blobs. |
+| `netlify.toml`, `package.json` | La configuración de Netlify y la única dependencia, `@netlify/blobs`, solo para la función: la app sigue sin compilar nada. |
 | `revisar/` | Una página aparte (no es parte de la app ni se instala) para revisar con quien cocina cuánto trabajo da cada comida inicial y con qué se acompaña. Se abre en `/revisar/`. |
 | `test/` | Las pruebas. |
 | `tools/sw-version.js` | Calcula y actualiza `VERSION` en `sw.js`. |

@@ -738,6 +738,7 @@ input[type='number'] {
   accent-color: var(--accent);
 }
 
+.check > span,
 .radio span {
   display: flex;
   flex-direction: column;
@@ -750,6 +751,20 @@ input[type='number'] {
 
 .error:empty {
   display: none;
+}
+
+/* Ajustes → Grupo de amigos: the code, big enough to read out loud. */
+.group-code {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.group-code strong {
+  font-size: 1.4rem;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- Tabs ---- */
