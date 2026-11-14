@@ -32,7 +32,8 @@ function memoryStore() {
 }
 
 async function call(store, body, now = NOW, method = 'POST') {
-  const init = method === 'POST' ? { method, body: typeof body === 'string' ? body : JSON.stringify(body) } : { method };
+  const headers = { 'content-type': 'application/json' };
+  const init = method === 'POST' ? { method, headers, body: typeof body === 'string' ? body : JSON.stringify(body) } : { method };
   const res = await handle(new Request('https://example.netlify.app/api/group', init), store, now);
   return { status: res.status, data: await res.json() };
 }
@@ -330,7 +331,7 @@ const fromOrigin = (origin, method = 'POST', body = { action: 'create', secret: 
   handle(
     new Request('https://quecomemoshoy89.netlify.app/api/group', {
       method,
-      headers: origin ? { origin } : {},
+      headers: { 'content-type': 'application/json', ...(origin ? { origin } : {}) },
       ...(method === 'POST' ? { body: JSON.stringify(body) } : {}),
     }),
     memoryStore(),
@@ -358,4 +359,19 @@ test('CORS: any other site gets no CORS headers, so its pages cannot use the fun
   for (const origin of ['https://evil.example', 'https://tenache.github.io.evil.example', null]) {
     assert.equal((await fromOrigin(origin)).headers.get('access-control-allow-origin'), null, String(origin));
   }
+});
+
+test('JSON only: a text/plain POST (which another site could send without a preflight) is refused', async () => {
+  const store = memoryStore();
+  const res = await handle(
+    new Request('https://quecomemoshoy89.netlify.app/api/group', {
+      method: 'POST',
+      headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
+      body: JSON.stringify({ action: 'create', secret: ANA, name: 'Ana' }),
+    }),
+    store,
+    NOW,
+  );
+  assert.equal(res.status, 415);
+  assert.equal(store.data.size, 0);
 });

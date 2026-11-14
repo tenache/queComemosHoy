@@ -255,6 +255,8 @@ export async function handle(request, store, now = Date.now()) {
 
 async function route(request, store, now) {
   if (request.method !== 'POST') return fail(405, 'post-only');
+  // JSON only: a page on another site could send text/plain without a preflight, and so without CORS.
+  if (!/^application\/json\b/i.test(request.headers.get('content-type') ?? '')) return fail(415, 'json-only');
   const text = await request.text();
   if (text.length > LIMITS.bodyBytes) return fail(413, 'too-big');
   let body;
