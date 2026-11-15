@@ -228,6 +228,7 @@ const STRINGS = {
     friendsTitle: '💞 También lo eligieron',
     friendsToday: 'hoy',
     friendsYesterday: 'ayer',
+    friendsNone: 'Ya nadie lo eligió hoy ni ayer.',
 
     backup: 'Copia de seguridad',
     backupHelp:
