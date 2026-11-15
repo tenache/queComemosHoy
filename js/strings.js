@@ -224,6 +224,7 @@ const STRINGS = {
     groupError: 'No se pudo. Probá de nuevo en un rato.',
     groupGone: 'Ya no estás en el grupo de amigos.',
     friendsMark: 'Alguien de tu grupo eligió este plato',
+    friendsMarkOf: 'Alguien de tu grupo eligió {name}',
     friendsTitle: '💞 También lo eligieron',
     friendsToday: 'hoy',
     friendsYesterday: 'ayer',

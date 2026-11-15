@@ -131,7 +131,8 @@ const ui = {
   tuningCopied: false,
   groupForm: { name: '', code: '', error: null, busy: false }, // Ajustes → Grupo de amigos (+ secret: kept so a retried join is the same member)
   groupList: readCachedGroupList(), // {code, time, you, members, picks}: the group function's last list
-  friends: null, // dishId while the "💞 También lo eligieron" sheet is open
+  friends: null, // dishId while the "💞 También lo eligieron" sheet is open (over the card, or over the list)
+  pickerScroll: 0, // where the list was scrolled when its 💞 was tapped: closing who picked goes back there
   groupInvited: false, // the invitation was copied ("Copiar")
 };
 
@@ -1265,10 +1266,11 @@ async function refreshGroupList(force = false) {
   setGroupList(group.code, res.data);
   const membersNow = JSON.stringify([res.data.you, res.data.members]);
   const markNow = ui.currentId && friendsPicks(currentGroupList(), Date.now()).has(ui.currentId);
-  // Redraw only what changed where it shows: never under someone typing, nor a card being dragged or flying out.
+  // Redraw only what changed where it shows: never under someone typing, nor a card being dragged or
+  // flying out, nor the open list (it would jump back to the top; its 💞 are current when it opens again).
   const moving = document.querySelector('.card.dragging, .card.flying');
   if (membersNow !== membersBefore && canRedrawSettings()) render();
-  else if (ui.tab === 'today' && markBefore !== markNow && !moving) render();
+  else if (ui.tab === 'today' && markBefore !== markNow && !moving && !ui.picking) render();
 }
 
 function setGroupList(code, data) {
@@ -1281,16 +1283,21 @@ function setGroupList(code, data) {
 }
 
 function openFriends(dishId) {
+  ui.pickerScroll = ui.picking ? (document.querySelector('#overlay .sheet')?.scrollTop ?? 0) : 0;
   ui.friends = dishId;
   render();
 }
 
+/** Back to what was under who picked: the card, or the list where it was scrolled. */
+function closeFriends() {
+  ui.friends = null;
+  render();
+  const list = ui.picking && document.querySelector('#overlay .sheet');
+  if (list) list.scrollTop = ui.pickerScroll;
+}
+
 function overlayFriends() {
   const who = friendsPicks(currentGroupList(), Date.now()).get(ui.friends) ?? [];
-  const close = () => {
-    ui.friends = null;
-    render();
-  };
   return sheet(
     `${t('friendsTitle')}: ${dishById(ui.friends)?.name ?? ''}`,
     h(
@@ -1298,7 +1305,7 @@ function overlayFriends() {
       { class: 'friends-list' },
       who.map((w) => h('li', null, h('span', null, w.name), h('span', { class: 'muted' }, t(w.today ? 'friendsToday' : 'friendsYesterday')))),
     ),
-    h('div', { class: 'row sheet-foot' }, button(t('close'), close)),
+    h('div', { class: 'row sheet-foot' }, button(t('close'), closeFriends)),
   );
 }
 
@@ -1671,10 +1678,14 @@ function pinFromList(side) {
   render();
 }
 
-/** The whole dish list, "never show" ones included. Tapping one logs it as tonight's meal. */
+/**
+ * The whole dish list, "never show" ones included. Tapping one logs it as
+ * tonight's meal; its 💞, next to the row (#28), opens who picked it.
+ */
 function overlayPicker() {
   // Sides that go with at least one main can be chosen first.
   const pinnable = state.dishes.filter((d) => d.role === 'side' && mainCandidates(state.dishes, d.id).length > 0);
+  const friends = friendsPicks(currentGroupList(), Date.now());
   return sheet(
     `📖 ${t('pickTitle')}`,
     h('p', { class: 'help' }, t('pickHelp')),
@@ -1684,7 +1695,7 @@ function overlayPicker() {
       mainCandidates(state.dishes).map((dish) =>
         h(
           'li',
-          null,
+          { class: 'list-item' },
           h(
             'button',
             { type: 'button', class: 'list-row', onclick: () => pickFromList(dish) },
@@ -1697,6 +1708,12 @@ function overlayPicker() {
             ),
             dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
           ),
+          friends.has(dish.id) &&
+            h(
+              'button',
+              { type: 'button', class: 'star', 'aria-label': t('friendsMarkOf', { name: dish.name }), title: t('friendsMark'), onclick: () => openFriends(dish.id) },
+              '💞',
+            ),
         ),
       ),
     ),
@@ -2102,12 +2119,12 @@ function render() {
           ? overlayMissing()
           : ui.sideSheet
             ? overlaySide()
-            : ui.picking
-              ? overlayPicker()
-              : ui.recipe
-                ? overlayRecipe()
-                : ui.friends
-                  ? overlayFriends()
+            : ui.friends // above the list, which it may have been opened from
+              ? overlayFriends()
+              : ui.picking
+                ? overlayPicker()
+                : ui.recipe
+                  ? overlayRecipe()
                   : null;
   $('overlay').replaceChildren(...(overlay ? [overlay] : []));
   document.body.classList.toggle('has-overlay', Boolean(overlay));
@@ -2204,12 +2221,15 @@ document.addEventListener('visibilitychange', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.picking || ui.sideSheet || ui.recipe || ui.friends)) {
+  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && ui.friends) {
+    closeFriends();
+    return;
+  }
+  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.picking || ui.sideSheet || ui.recipe)) {
     ui.sheet = null;
     ui.picking = false;
     ui.sideSheet = null;
     ui.recipe = null;
-    ui.friends = null;
     render();
     return;
   }
