@@ -47,6 +47,20 @@ export function cleanName(raw) {
   return /[\p{L}\p{N}\p{S}]/u.test(name) ? name : '';
 }
 
+/**
+ * A name as the app saved it before #33's stricter rule: trimmed, one space,
+ * no control characters or broken emoji halves, at most GROUP.nameLength.
+ * For this phone's own saved name, so an update never drops a group whose
+ * name the app accepted before ("...", say). New names go through cleanName.
+ */
+export function cleanSavedName(raw) {
+  const text = String(raw ?? '')
+    .replace(/[\u0000-\u001f\u007f]|[\ud800-\udfff]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return [...text].slice(0, GROUP.nameLength).join('').trim();
+}
+
 /** A code as typed or pasted (" abcd-2345 ") → "ABCD2345", or null if it can't be one. */
 export function normalizeCode(text) {
   const code = String(text ?? '')
@@ -89,7 +103,7 @@ export function cleanGroup(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const code = normalizeCode(raw.code);
   const secret = SECRET_RE.test(String(raw.secret)) ? raw.secret : null;
-  const name = cleanName(raw.name);
+  const name = cleanSavedName(raw.name);
   if (!code || !secret || !name) return null;
   const queue = (Array.isArray(raw.queue) ? raw.queue : []).map(cleanOp).filter(Boolean).slice(-GROUP.queueMax);
   return { code, secret, name, sharing: raw.sharing !== false, queue };
