@@ -99,11 +99,11 @@ test('a spin shows "Girando…", then the result that was picked before it start
 
   await spinEnd();
   assert.equal(screen.ui.wheel.spinning, false);
-  assert.ok(textOf({ children: screen.tree }).includes('wheelLandedCuisineEmpanadas'));
+  assert.ok(textOf({ children: screen.tree }).includes('wheelLandedCuisineÁrabe'));
   assert.equal(screen.state.deliveries.length, 0, 'spinning logs nothing');
 
   findButton(screen.tree, 'wheelOrder').props.onclick();
-  assert.deepEqual(screen.state.deliveries.map((d) => d.cuisine), ['Empanadas'], 'only "¡Pedimos!" logs a delivery');
+  assert.deepEqual(screen.state.deliveries.map((d) => d.cuisine), ['Árabe'], 'only "¡Pedimos!" logs a delivery');
 });
 
 test('landing on "cook instead" offers to go and cook, and closes the wheel', async () => {
@@ -164,7 +164,7 @@ test('an edit that lands during a spin does not break the result', async () => {
     const w = screen.ui.wheel;
     assert.equal(w.spinning, false, `${name}: the spin ended`);
     assert.equal(w.slices, spun, `${name}: the result is read from the wheel that was spun`);
-    assert.ok(textOf({ children: screen.tree }).includes('wheelLandedCuisineEmpanadas'), `${name}: the result is shown`);
+    assert.ok(textOf({ children: screen.tree }).includes('wheelLandedCuisineÁrabe'), `${name}: the result is shown`);
     assert.ok(findButton(screen.tree, 'wheelSpinAgain'), `${name}: and the buttons with it`);
   }
 });

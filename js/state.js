@@ -1,18 +1,19 @@
 // The app's state as one versioned JSON object, plus pure helpers that change
 // it. No DOM and no storage here, so `node --test` can cover it.
 
-import { NEW_IN_V3, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
+import { CHANGED_IN_V6, NEW_IN_V3, NEW_IN_V6, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
 import { ACTIONS, EFFORT, FAVORITES_MAX, LIKING, MOOD_IDS, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
 import { FOODS } from './nutrition.js';
 import { cleanGroup } from './group.js';
 import { cleanParams } from './params.js';
-import { DEFAULT_CUISINES, cleanCuisine, cleanCuisines } from './wheel.js';
+import { DEFAULT_CUISINES, NEW_CUISINES_IN_V6, addCuisine, cleanCuisine, cleanCuisines } from './wheel.js';
 
 // 1: the v1 app. 2: adds the delivery wheel (`cuisines`, `deliveries`).
 // 3: mains and sides (`role`, `sides`, `sideId` on meals) and favourites.
 // 4: recipes the user wrote (`recipe` on a dish) and the portions setting.
 // 5: `effort` on a dish (hidden from the user).
-export const SCHEMA_VERSION = 5;
+// 6: no new fields: the starter menu and the wheel change (#29, #30).
+export const SCHEMA_VERSION = 6;
 export const PORTIONS = { min: 1, max: 12, default: 2 };
 const MAX_RECIPE_ITEMS = 40;
 const MAX_RECIPE_STEPS = 30;
@@ -151,6 +152,7 @@ function migrate(raw) {
     });
     blob.schemaVersion = 5;
   }
+  if (blob.schemaVersion === 5) migrateToV6(blob);
   return blob;
 }
 
@@ -198,6 +200,41 @@ function migrateToV3(blob) {
   for (const d of blob.dishes) if (d && Array.isArray(d.sides)) d.sides = d.sides.map((id) => alias.get(id) ?? id);
   blob.events = blob.events.map((e) => (e && alias.has(e.sideId) ? { ...e, sideId: alias.get(e.sideId) } : e));
   blob.schemaVersion = 3;
+}
+
+/**
+ * v6 changes the starter menu (#30) and the wheel (#29). A dish in
+ * CHANGED_IN_V6 that still has its v5 name gets its new name (unless another
+ * dish has it already) and, if it has no sides, the starter's. Pulled pork is
+ * added, and "Árabe" joins the wheel. As in v3, a starter the user already has
+ * under its name is theirs: sides point at theirs, and nothing is added twice.
+ */
+function migrateToV6(blob) {
+  const starters = new Map(STARTER_DISHES.map((d) => [d.id, d]));
+  const dishes = blob.dishes.filter((d) => d && typeof d === 'object');
+  const ids = new Set(dishes.map((d) => String(d.id)));
+  const names = new Map(dishes.map((d) => [normalizeName(d.name), String(d.id)]));
+  // A starter as this user has it: under its id, or their own dish with its name. Undefined if neither.
+  const local = (id) => (ids.has(id) ? id : names.get(normalizeName(starters.get(id).name)));
+  const localSides = (starter) => starter.sides.map(local).filter(Boolean);
+  blob.dishes = blob.dishes.map((raw) => {
+    const oldName = raw && typeof raw === 'object' ? CHANGED_IN_V6[String(raw.id)] : undefined;
+    if (!oldName || String(raw.name ?? '').trim() !== oldName) return raw;
+    const starter = starters.get(String(raw.id));
+    const dish = { ...raw };
+    const taken = names.get(normalizeName(starter.name));
+    if (taken === undefined || taken === String(raw.id)) dish.name = starter.name;
+    if (!Array.isArray(raw.sides) || raw.sides.length === 0) dish.sides = localSides(starter);
+    return dish;
+  });
+  for (const id of NEW_IN_V6) {
+    const starter = starters.get(id);
+    if (!ids.has(id) && !names.has(normalizeName(starter.name))) blob.dishes.push({ ...copyStarter(starter), sides: localSides(starter) });
+  }
+  let cuisines = cleanCuisines(blob.cuisines);
+  for (const name of NEW_CUISINES_IN_V6) cuisines = addCuisine(cuisines, name) ?? cuisines;
+  blob.cuisines = cuisines;
+  blob.schemaVersion = 6;
 }
 
 /**

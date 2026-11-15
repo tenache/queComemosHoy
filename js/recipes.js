@@ -232,6 +232,13 @@ export const STARTER_RECIPES = {
     'Herví los fideos en agua con sal el tiempo que diga el paquete.',
     'Colalos y mezclalos enseguida con la manteca y el queso rallado.',
   ]),
+  'pulled-pork': r(2, [x('cerdo', 500, 'bondiola de cerdo'), x('pan de hamburguesa', 240, 'panes de hamburguesa', 60), x('azucar', 10, 'azúcar'), s('pimentón, comino, sal y pimienta'), s('mostaza, salsa romesco o palta, a elección')], [
+    'Conviene hacer una pieza grande: rinde para todos y lo que sobra se congela.',
+    'Frotá la bondiola con el azúcar, el pimentón, el comino, sal y pimienta.',
+    'Ponela en una fuente con un vaso de agua, tapada con papel de aluminio, y horneá a 150 °C unas 4 horas (o 8 horas en olla lenta), hasta que se deshaga con un tenedor.',
+    'Desmechala con dos tenedores y mezclala con el jugo de la fuente.',
+    'Tostá los panes y armá los sándwiches con mostaza, salsa romesco o palta, a elección.',
+  ]),
 
   // Sides
   pure: r(2, [x('papa', 500, 'papas', 200), x('leche', 100, 'leche'), x('manteca', 20, 'manteca'), s('sal y nuez moscada')], [

@@ -31,7 +31,9 @@ export const WHEEL = {
   landingMargin: 0.12, // keep this share of a slice clear at each edge, so the pointer never sits on a line
 };
 
-export const DEFAULT_CUISINES = ['China', 'Mexicana', 'Hamburguesas', 'Pizza', 'Sushi', 'Empanadas'];
+export const DEFAULT_CUISINES = ['China', 'Mexicana', 'Hamburguesas', 'Pizza', 'Sushi', 'Empanadas', 'Árabe'];
+/** Cuisines that v6 adds to wheels that don't have them yet (#29). */
+export const NEW_CUISINES_IN_V6 = ['Árabe'];
 export const MAX_CUISINE_LENGTH = 24;
 export const COOK = 'cook';
 

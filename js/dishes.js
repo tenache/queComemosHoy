@@ -22,7 +22,7 @@ const STARTER_EFFORT = {
   hamburguesas: 3, 'fajitas-pollo': 3, 'merluza-ensalada': 1, paella: 4, gazpacho: 2,
   'garbanzos-espinaca': 2, tostado: 1, omelette: 1, 'wok-verduras': 3, asado: 4, 'cerdo-batatas': 1,
   'zapallitos-rellenos': 4, 'croquetas-arroz': 4, salchichas: 1, 'patitas-pollo': 1, 'huevos-fritos': 1,
-  'bife-plancha': 1, 'pechuga-plancha': 1, 'fideos-manteca': 1,
+  'bife-plancha': 1, 'pechuga-plancha': 1, 'fideos-manteca': 1, 'pulled-pork': 2,
   pure: 3, 'pure-calabaza': 3, 'ensalada-mixta': 2, 'ensalada-tomate': 1, 'papas-fritas': 3,
   'papas-horno': 2, 'batatas-horno': 1, 'arroz-blanco': 1, 'verduras-vapor': 2,
 };
@@ -48,16 +48,18 @@ const side = (...args) => dish('side', ...args);
 
 // The usual sides for something fried or grilled.
 const CON_PAPAS = ['pure', 'papas-fritas', 'ensalada-mixta'];
+// Milanesas' sides, of meat or of eggplant.
+const CON_MILANESA = ['pure', 'ensalada-mixta', 'papas-fritas', 'ravioles-tuco', 'arroz-blanco'];
 
 export const STARTER_DISHES = [
   d('fideos-huevo', 'Fideos con huevo frito', '🍝', 15, 3, 4, ['pasta', 'huevo'], ['fideos', 'huevo', 'queso rallado']),
   d('tortilla-papas', 'Tortilla de papas', '🥔', 40, 3, 4, ['papa', 'huevo'], ['papa', 'huevo', 'cebolla']),
-  d('milanesas-berenjena', 'Milanesas de berenjena', '🍆', 40, 4, 2, ['berenjena'], ['berenjena', 'huevo', 'pan rallado']),
+  d('milanesas-berenjena', 'Milanesas de berenjena', '🍆', 40, 4, 2, ['berenjena'], ['berenjena', 'huevo', 'pan rallado'], CON_MILANESA),
   d('pollo-curry', 'Pollo al curry con arroz', '🍛', 40, 3, 4, ['pollo', 'arroz'], ['pollo', 'arroz', 'curry', 'cebolla', 'crema']),
   d('sopa-pollo', 'Sopa de pollo', '🍲', 50, 5, 3, ['pollo'], ['pollo', 'zanahoria', 'cebolla', 'apio', 'fideos']),
-  d('lentejas', 'Lentejas', '🥘', 50, 5, 3, ['legumbres'], ['lentejas', 'cebolla', 'zanahoria', 'papa', 'pimentón']),
+  d('lentejas', 'Guiso de lentejas', '🥘', 50, 5, 3, ['legumbres'], ['lentejas', 'cebolla', 'zanahoria', 'papa', 'pimentón']),
   d('pato-naranja', 'Pato a la naranja', '🦆', 150, 3, 5, ['pato'], ['pato', 'naranja', 'manteca', 'azúcar', 'vino blanco', 'caldo']),
-  d('milanesas-pure', 'Milanesas', '🥩', 35, 2, 5, ['carne'], ['carne', 'huevo', 'pan rallado'], ['pure', 'ensalada-mixta', 'papas-fritas', 'ravioles-tuco', 'arroz-blanco']),
+  d('milanesas-pure', 'Milanesas', '🥩', 35, 2, 5, ['carne'], ['carne', 'huevo', 'pan rallado'], CON_MILANESA),
   d('ravioles-tuco', 'Ravioles con tuco', '🥟', 25, 3, 4, ['pasta'], ['ravioles', 'tomate triturado', 'cebolla', 'ajo', 'queso rallado']),
   d('noquis', 'Ñoquis con salsa', '🍝', 20, 2, 4, ['pasta'], ['ñoquis', 'tomate triturado', 'queso rallado']),
   d('arroz-atun', 'Arroz con atún', '🍚', 20, 3, 3, ['arroz', 'pescado'], ['arroz', 'atún', 'huevo']),
@@ -92,6 +94,9 @@ export const STARTER_DISHES = [
   d('pechuga-plancha', 'Pechuga a la plancha', '🐓', 15, 4, 3, ['pollo'], ['pechuga de pollo', 'limón'], ['ensalada-mixta', 'arroz-blanco', 'verduras-vapor', 'pure-calabaza']),
   d('fideos-manteca', 'Fideos con manteca y queso', '🧈', 12, 2, 4, ['pasta', 'queso'], ['fideos', 'manteca', 'queso rallado']),
 
+  // Added in schema v6 (#30): a big piece for everyone to make sandwiches.
+  d('pulled-pork', 'Pulled pork', '🥪', 240, 2, 5, ['cerdo', 'pan'], ['bondiola de cerdo', 'pan de hamburguesa'], ['papas-fritas', 'ensalada-mixta']),
+
   // Sides (added in schema v3).
   side('pure', 'Puré de papas', '🥔', 25, 3, 4, ['papa'], ['papa', 'leche', 'manteca']),
   side('pure-calabaza', 'Puré de calabaza', '🎃', 25, 4, 3, ['calabaza'], ['calabaza', 'manteca']),
@@ -124,3 +129,17 @@ export const NEW_IN_V3 = [
   'croquetas-arroz', 'salchichas', 'patitas-pollo', 'huevos-fritos', 'bife-plancha', 'pechuga-plancha', 'fideos-manteca',
   'pure', 'pure-calabaza', 'ensalada-mixta', 'ensalada-tomate', 'papas-fritas', 'papas-horno', 'batatas-horno', 'arroz-blanco', 'verduras-vapor',
 ];
+
+/**
+ * The v5 starter dishes that v6 changes (#30), by their v5 name. The v5 → v6
+ * migration only changes a dish that still has that name, and gives it its
+ * sides only if it has none (an edited dish is the user's, and stays):
+ * milanesas de berenjena get sides, lentejas become "Guiso de lentejas".
+ */
+export const CHANGED_IN_V6 = {
+  'milanesas-berenjena': 'Milanesas de berenjena',
+  lentejas: 'Lentejas',
+};
+
+/** Starter dishes that v6 adds to existing data. */
+export const NEW_IN_V6 = ['pulled-pork'];
