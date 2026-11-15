@@ -1,5 +1,5 @@
-// Tests for the friends' group on the phone (js/group.js, #23): codes, names,
-// the stored group, what gets shared, and the queue of picks waiting to be sent.
+// Tests for the friends' groups on the phone (js/group.js, #23, #33): codes,
+// names, the stored groups, what gets shared, and the queue of picks waiting to be sent.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -9,6 +9,7 @@ import {
   GROUP,
   apiUrl,
   cleanGroup,
+  cleanGroups,
   cleanName,
   cleanSavedName,
   dropQueuedPicks,
@@ -26,7 +27,7 @@ import { defaultState, normalizeState } from '../js/state.js';
 
 const NOW = Date.UTC(2026, 10, 14, 20, 0, 0);
 const SECRET = 'a'.repeat(32);
-const group = (fields = {}) => ({ code: 'ABCD2345', secret: SECRET, name: 'Ana', sharing: true, queue: [], ...fields });
+const group = (fields = {}) => ({ code: 'ABCD2345', secret: SECRET, name: 'Ana', groupName: null, sharing: true, queue: [], ...fields });
 
 test('normalizeCode: forgiving with case, spaces and dashes; strict with letters it never uses', () => {
   assert.equal(normalizeCode(' abcd-2345 '), 'ABCD2345');
@@ -55,6 +56,10 @@ test('newSecret and newPickId: the shapes the function accepts, different every 
 
 test('cleanGroup: keeps a valid group, drops a broken one', () => {
   assert.deepEqual(cleanGroup(group()), group());
+  assert.equal(cleanGroup(group({ groupName: '  Familia ' })).groupName, 'Familia');
+  assert.equal(cleanGroup(group({ groupName: '   ' })).groupName, null, 'no name yet: null');
+  const { groupName, ...before33 } = group();
+  assert.deepEqual(cleanGroup(before33), group(), 'saved before #33: no groupName');
   assert.deepEqual(cleanGroup({ ...group(), code: 'abcd-2345', sharing: undefined }), group()); // sharing defaults to on
   assert.equal(cleanGroup(group({ sharing: false })).sharing, false);
   assert.equal(cleanGroup(group({ code: 'nope' })), null);
@@ -73,8 +78,8 @@ test('cleanGroup: a name saved before the stricter rule keeps its group (#34)', 
   }
   assert.equal(cleanGroup(group({ name: '   ' })), null, 'an empty one still does not');
   const state = defaultState();
-  state.settings.group = group({ name: '...' });
-  assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))).settings.group, group({ name: '...' }));
+  state.settings.groups = [group({ name: '...' })];
+  assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))).settings.groups, [group({ name: '...' })]);
 });
 
 test('cleanGroup: keeps only well-formed calls in the queue, the newest GROUP.queueMax', () => {
@@ -94,16 +99,45 @@ test('cleanGroup: keeps only well-formed calls in the queue, the newest GROUP.qu
   assert.equal(kept[0].pickId, many[5].pickId);
 });
 
-test('state: a valid group survives a save and load, a broken one is dropped', () => {
-  assert.equal(defaultState().settings.group, null);
+test('state: valid groups survive a save and load, broken ones are dropped', () => {
+  assert.deepEqual(defaultState().settings.groups, []);
   const state = defaultState();
-  state.settings.group = group();
-  assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))).settings.group, group());
-  state.settings.group = { code: 'nope' };
-  assert.equal(normalizeState(state).settings.group, null);
+  state.settings.groups = [group({ groupName: 'Familia' }), group({ code: 'WXYZ6789' })];
+  assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))).settings.groups, state.settings.groups);
+  state.settings.groups = [{ code: 'nope' }, group()];
+  assert.deepEqual(normalizeState(state).settings.groups, [group()]);
   const old = defaultState();
-  delete old.settings.group; // saved by a copy of the app from before #23
-  assert.equal(normalizeState(old).settings.group, null);
+  delete old.settings.groups;
+  assert.deepEqual(normalizeState(old).settings.groups, []);
+});
+
+test(`cleanGroups: each group once, at most ${GROUP.max}`, () => {
+  assert.equal(GROUP.max, 5);
+  const codes = ['AAAA2222', 'BBBB3333', 'CCCC4444', 'DDDD5555', 'EEEE6666', 'FFFF7777'];
+  const kept = cleanGroups([group({ code: codes[0] }), group({ code: codes[0], name: 'Otra' }), ...codes.slice(1).map((code) => group({ code }))]);
+  assert.deepEqual(kept.map((g) => g.code), codes.slice(0, GROUP.max), 'the first of a repeated code, and the first five');
+  assert.equal(kept[0].name, 'Ana');
+  assert.deepEqual(cleanGroups('nope'), []);
+  assert.deepEqual(cleanGroups(null), []);
+});
+
+test('migration v6 -> v7: the one group becomes the first of several, queue and all', () => {
+  const v6 = (group) => {
+    const blob = JSON.parse(JSON.stringify(defaultState()));
+    const { groups, ...settings } = blob.settings;
+    return { ...blob, schemaVersion: 6, settings: { ...settings, group } };
+  };
+  const queue = [{ op: 'pick', pickId: 'pick000001', dishId: 'pizza', time: NOW }];
+  const { groupName, ...before33 } = group({ sharing: false, queue });
+  const moved = normalizeState(v6(before33)).settings;
+  assert.deepEqual(moved.groups, [group({ sharing: false, queue })]);
+  assert.equal('group' in moved, false, 'no old key left behind');
+  const { groupName: none, ...dots } = group({ name: '...' });
+  assert.deepEqual(normalizeState(v6(dots)).settings.groups, [group({ name: '...' })], 'a name saved before the stricter rule moves too');
+  assert.deepEqual(normalizeState(v6(null)).settings.groups, []);
+  assert.deepEqual(normalizeState(v6({ code: 'nope' })).settings.groups, []);
+  const v1 = { schemaVersion: 1, dishes: [], events: [], settings: {} };
+  assert.deepEqual(normalizeState(v1).settings.groups, []);
 });
 
 test('isLocalHost: the computer the app is being worked on', () => {

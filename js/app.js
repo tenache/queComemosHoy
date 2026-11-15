@@ -27,6 +27,7 @@ import {
   undoCardAction,
 } from './state.js';
 import {
+  GROUP,
   cleanName,
   createGroup,
   dropQueuedPicks,
@@ -38,10 +39,12 @@ import {
   joinGroup,
   leaveGroup,
   listGroup,
+  newPickId,
   newSecret,
   normalizeCode,
   queuePick,
   queueUnpick,
+  renameGroup,
   shouldShare,
 } from './group.js';
 import { formatItem, itemAmount, mealMacros, parseItem } from './nutrition.js';
@@ -61,7 +64,8 @@ let state = loaded.state;
 // ---- Tuning (params.js): code ← params.json ← this phone ------------------
 
 const PARAMS_FILE_KEY = 'qch:params-file'; // the last params.json that could be read
-const GROUP_LIST_KEY = 'qch:group-list'; // the group's last list (#23), for the 💞 while offline
+const GROUP_LISTS_KEY = 'qch:group-lists'; // each group's last list, by code (#23, #33), for the 💞 while offline
+const OLD_GROUP_LIST_KEY = 'qch:group-list'; // the one group's last list, before #33
 const paramsFile = { values: readCachedParams(), status: null }; // status: null (not yet) | 'ok' | 'error'
 
 function readCachedParams() {
@@ -117,7 +121,7 @@ const ui = {
   favorites: null, // Set of dish ids while the "choose your favourites" question shows
   mood: false, // while the "¿Cómo está nuestro cocinero hoy?" question shows
   recipe: null, // {mainId, sideId} while the recipe sheet is open
-  cooked: null, // {dishId, event, undo, shareId} while the "¡A cocinar!" panel shows
+  cooked: null, // {dishId, event, undo, shareId, sharedWith: [codes]} while the "¡A cocinar!" panel shows
   sheet: null, // {dishId, sideId, selected:Set} while the 🛒 sheet is open
   picking: false, // while the "pick from the whole list" sheet is open
   readOnly: false, // stored data is from a newer app version: never save over it
@@ -129,11 +133,15 @@ const ui = {
   installPrompt: null,
   tuningOpen: false, // the "Ajustes finos" section is expanded
   tuningCopied: false,
-  groupForm: { name: '', code: '', error: null, busy: false }, // Ajustes → Grupo de amigos (+ secret: kept so a retried join is the same member)
-  groupList: readCachedGroupList(), // {code, time, you, members, picks}: the group function's last list
+  // Ajustes → Grupos de amigos: the fields (`rename`: a new name per group code), the error and where it
+  // goes (`errorFor`: a group code, or null for the create/join form), and `secret`, kept until a first
+  // create or join succeeds so a retried join is the same member.
+  groupForm: newGroupForm(),
+  groupLists: readCachedGroupLists(), // {code: {code, time, you, groupName, members, picks}}: each group's last list
+  openGroups: new Set(), // the codes of the groups opened in Ajustes, to see their members
   friends: null, // dishId while the "💞 También lo eligieron" sheet is open (over the card, or over the list)
   pickerScroll: 0, // where the list was scrolled when its 💞 was tapped: closing who picked goes back there
-  groupInvited: false, // the invitation was copied ("Copiar")
+  groupInvited: null, // the code of the group whose invitation was copied ("Copiar")
 };
 
 const $ = (id) => document.getElementById(id);
@@ -259,7 +267,7 @@ function scoringContext() {
     isMissing: (name) => isMissing(state, name),
     pinnedSideId: ui.pinnedSide,
     mood: moodToday(state, Date.now()),
-    friends: friendCounts(currentGroupList(), Date.now()),
+    friends: friendCounts(currentGroupLists(), Date.now()),
   };
 }
 
@@ -330,9 +338,11 @@ function cook(action, missing = [], dishId = ui.currentId, sideId = dishId === u
   if (!dish) return;
   const undo = planUndo(state, dish.id, missing, sideId);
   const event = logCardAction(state, dish.id, action, missing, Date.now(), sideId);
-  const group = state.settings.group;
-  const shareId = shouldShare(group, dish.id, window.location.hostname) ? queuePick(group, dish.id, event.time) : null;
-  ui.cooked = { dishId: dish.id, event, undo, shareId };
+  // One pick, with one id, to every group sharing (#33), so "Deshacer" takes it back from all of them.
+  const sharedWith = state.settings.groups.filter((g) => shouldShare(g, dish.id, window.location.hostname));
+  const shareId = sharedWith.length > 0 ? newPickId() : null;
+  for (const group of sharedWith) queuePick(group, dish.id, event.time, shareId);
+  ui.cooked = { dishId: dish.id, event, undo, shareId, sharedWith: sharedWith.map((g) => g.code) };
   ui.sheet = null;
   ui.sideSheet = null;
   ui.picking = false;
@@ -387,9 +397,9 @@ function reject(action, missing = []) {
 }
 
 function undoCook() {
-  const { event, undo, shareId } = ui.cooked;
+  const { event, undo, shareId, sharedWith } = ui.cooked;
   undoCardAction(state, event, undo);
-  if (shareId && state.settings.group) queueUnpick(state.settings.group, shareId);
+  for (const group of state.settings.groups) if (shareId && sharedWith.includes(group.code)) queueUnpick(group, shareId);
   ui.cooked = null; // back to the card that was showing
   commit();
   flushGroup();
@@ -617,7 +627,7 @@ function viewToday() {
       'div',
       { class: 'card-art', style: `background:${gradientFor(dish)}` },
       h('span', { class: 'card-emoji', 'aria-hidden': 'true' }, dish.emoji),
-      friendsPicks(currentGroupList(), Date.now()).has(dish.id) &&
+      friendsPicks(currentGroupLists(), Date.now()).has(dish.id) &&
         h(
           'button',
           { type: 'button', class: 'friends-mark', 'aria-label': t('friendsMark'), title: t('friendsMark'), onclick: () => openFriends(dish.id) },
@@ -1086,8 +1096,8 @@ function viewPantry() {
 }
 
 function exportData() {
-  // The group stays out: a copy imported on another phone must not take over this one's place in it.
-  const copy = { ...state, settings: { ...state.settings, group: null } };
+  // The groups stay out: a copy imported on another phone must not take over this one's place in them.
+  const copy = { ...state, settings: { ...state.settings, groups: [] } };
   downloadText(JSON.stringify(copy, null, 2), `que-comemos-hoy-${today()}.json`);
 }
 
@@ -1100,7 +1110,7 @@ async function importData(file) {
     return;
   }
   if (!window.confirm(t('confirmImport', { dishes: state.dishes.length }))) return;
-  next.settings.group = state.settings.group; // this phone's group, whatever the file says
+  next.settings.groups = state.settings.groups; // this phone's groups, whatever the file says
   state = next;
   applyTuning();
   wheelView.close();
@@ -1176,24 +1186,38 @@ function viewSettings() {
   ];
 }
 
-// ---- Friends' group (group.js, #23) ---------------------------------------
+// ---- Friends' groups (group.js, #23, #33) ---------------------------------
 
-let flushing = null; // the run of flushQueue() under way, if any
+let flushing = null; // the run of flushGroup() under way, if any
+const leaving = new Set(); // codes of the groups being left: nothing more is sent to them or fetched
 
-/** Sends the picks waiting in the queue. Safe to call often: one run at a time. */
+/** Saves the state, unless this copy is read-only (a newer copy of the app saved over it). */
+function saveGroups() {
+  if (!ui.readOnly) saveState(state);
+}
+
+/** A group as the state has it now: another tab or an import may have replaced the objects held across a call. */
+const groupByCode = (code) => state.settings.groups.find((g) => g.code === code);
+
+/** Sends the picks waiting in each group's queue, one group after another. Safe to call often: one run at a time. */
 function flushGroup() {
-  if (flushing || ui.readOnly || !state.settings.group?.queue.length) return flushing;
-  flushing = flushQueue(
-    () => state.settings.group,
-    () => saveState(state),
-  ).finally(() => {
+  const waiting = () => state.settings.groups.filter((g) => g.queue.length > 0 && !leaving.has(g.code));
+  if (flushing || ui.readOnly || waiting().length === 0) return flushing;
+  flushing = (async () => {
+    const results = [];
+    for (const { code } of waiting()) {
+      // The group as the state has it now, which another tab or an import may have replaced.
+      results.push([code, await flushQueue(() => groupByCode(code), saveGroups)]);
+    }
+    return results;
+  })().finally(() => {
     flushing = null;
   });
-  return flushing.then((result) => {
-    if (result === 'gone') leftGroup(t('groupGone'));
-    // A pick queued while the last call was out: send it too.
-    else if (result === 'done' && state.settings.group?.queue.length) flushGroup();
-    else if (canRedrawSettings()) render(); // the "waiting" line
+  return flushing.then((results) => {
+    for (const [code, result] of results) if (result === 'gone') leftGroup(code, true);
+    // A pick queued while the last call was out: send it too (unless a group is waiting for the network).
+    if (results.every(([, result]) => result !== 'later') && waiting().length > 0) flushGroup();
+    else if (canRedrawSettings()) render(); // the "waiting" lines
   });
 }
 
@@ -1206,79 +1230,105 @@ function canRedrawSettings() {
   return ui.tab === 'settings' && !ui.editing && !document.activeElement?.closest?.('#view input, #view textarea, #view select');
 }
 
-function leftGroup(message = null) {
-  state.settings.group = null;
-  ui.groupList = null;
+function newGroupForm() {
+  return { name: '', groupName: '', code: '', rename: {}, error: null, errorFor: null, busy: false };
+}
+
+/** What a group is called on this phone: its name, or its code until someone names it. */
+const groupLabel = (group) => group.groupName ?? t('groupUnnamed', { code: formatCode(group.code) });
+
+/** This phone is out of a group (it left, or the server says it isn't in it: `gone`): forget it and its list. */
+function leftGroup(code, gone = false) {
+  const group = groupByCode(code);
+  if (!group) return render(); // already gone (another tab, or a "gone" answer first): just redraw
+  state.settings.groups = state.settings.groups.filter((g) => g !== group);
+  ui.groupLists.delete(code);
+  saveGroupLists();
+  ui.openGroups.delete(code);
   ui.friends = null;
-  try {
-    localStorage.removeItem(GROUP_LIST_KEY);
-  } catch {
-    // Nothing cached, or nowhere to cache: either way it's gone.
-  }
-  ui.groupForm = { name: '', code: '', error: null, busy: false };
+  if (ui.groupInvited === code) ui.groupInvited = null;
+  delete ui.groupForm.rename[code];
+  if (ui.groupForm.errorFor === code) ui.groupForm.error = null;
   commit();
-  if (message) addBanner('group', message);
+  if (gone) addBanner('group', t('groupGone', { name: groupLabel(group) }));
 }
 
-function readCachedGroupList() {
+/** Each group's last list, kept for the 💞 while offline. The one list kept before #33 is the first group's. */
+function readCachedGroupLists() {
+  const usable = (list) => list && typeof list === 'object' && typeof list.code === 'string' && Array.isArray(list.picks);
   try {
-    const list = JSON.parse(localStorage.getItem(GROUP_LIST_KEY));
-    return list && typeof list === 'object' && Array.isArray(list.picks) ? list : null;
+    const lists = JSON.parse(localStorage.getItem(GROUP_LISTS_KEY));
+    if (lists && typeof lists === 'object') return new Map(Object.values(lists).filter(usable).map((l) => [l.code, l]));
+    const old = JSON.parse(localStorage.getItem(OLD_GROUP_LIST_KEY));
+    return new Map(usable(old) ? [[old.code, old]] : []);
   } catch {
-    return null;
+    return new Map();
   }
 }
 
-/** The last list, if it is of the group this phone is in now (another tab may have changed it). */
-function currentGroupList() {
-  const list = ui.groupList;
-  return list && list.code === state.settings.group?.code ? list : null;
+function saveGroupLists() {
+  // Only the groups this phone is in: a list of one left in another tab is not written back.
+  for (const code of ui.groupLists.keys()) if (!groupByCode(code)) ui.groupLists.delete(code);
+  try {
+    localStorage.setItem(GROUP_LISTS_KEY, JSON.stringify(Object.fromEntries(ui.groupLists)));
+    localStorage.removeItem(OLD_GROUP_LIST_KEY);
+  } catch {
+    // Not kept for offline use: fetched again next time.
+  }
+}
+
+/** The last lists of the groups this phone is in now (another tab may have changed them). */
+function currentGroupLists() {
+  return state.settings.groups.map((g) => ui.groupLists.get(g.code)).filter(Boolean);
 }
 
 // How often the 💞 are fetched again while the app stays open.
 const GROUP_REFRESH_MS = 3 * 60 * 1000;
-let listing = null; // the list call on its way, if any: leaving waits for it
+let listing = null; // the list calls on their way, if any: leaving waits for them
 
 /**
- * Fetches who is in the group and what they picked: for the 💞 on the card,
- * the score and Ajustes. At most every GROUP_REFRESH_MS unless `force`.
- * Also notices a group this phone was taken out of.
+ * Fetches who is in each group, its name and what they picked: for the 💞 on
+ * the card, the score and Ajustes. At most every GROUP_REFRESH_MS per group
+ * unless `force`. Also notices a group this phone was taken out of.
  */
 async function refreshGroupList(force = false) {
-  const group = state.settings.group;
-  if (!group || listing || ui.readOnly) return;
-  const last = currentGroupList();
+  if (listing || ui.readOnly) return;
   // A little slack: `time` is when the last answer came, so the 3-minute timer would skip every other tick.
-  if (!force && last && Date.now() - last.time < GROUP_REFRESH_MS - 10_000) return;
-  listing = listGroup(group);
-  let res;
+  const due = state.settings.groups.filter(
+    (g) => !leaving.has(g.code) && (force || !(Date.now() - (ui.groupLists.get(g.code)?.time ?? 0) < GROUP_REFRESH_MS - 10_000)),
+  );
+  if (due.length === 0) return;
+  const shown = () => JSON.stringify(currentGroupLists().map((l) => [l.code, l.you, l.groupName, l.members]));
+  const before = shown();
+  const markBefore = ui.currentId && friendsPicks(currentGroupLists(), Date.now()).has(ui.currentId);
+  listing = Promise.all(due.map(async (group) => [group, await listGroup(group)]));
+  let results;
   try {
-    res = await listing;
+    results = await listing;
   } finally {
     listing = null;
   }
-  if (state.settings.group !== group) return;
-  if (res.status === 403 && res.data?.error === 'not-member') return leftGroup(t('groupGone'));
-  if (!res.ok) return;
-  const before = currentGroupList();
-  const membersBefore = JSON.stringify([before?.you, before?.members]);
-  const markBefore = ui.currentId && friendsPicks(before, Date.now()).has(ui.currentId);
-  setGroupList(group.code, res.data);
-  const membersNow = JSON.stringify([res.data.you, res.data.members]);
-  const markNow = ui.currentId && friendsPicks(currentGroupList(), Date.now()).has(ui.currentId);
+  for (const [group, res] of results) {
+    if (!state.settings.groups.includes(group) || leaving.has(group.code)) continue; // left, or replaced by another tab
+    if (res.status === 403 && res.data?.error === 'not-member') leftGroup(group.code, true);
+    else if (res.ok) setGroupList(group, res.data);
+  }
+  const markNow = ui.currentId && friendsPicks(currentGroupLists(), Date.now()).has(ui.currentId);
   // Redraw only what changed where it shows: never under someone typing, nor a card being dragged or
   // flying out, nor the open list (it would jump back to the top; its 💞 are current when it opens again).
   const moving = document.querySelector('.card.dragging, .card.flying');
-  if (membersNow !== membersBefore && canRedrawSettings()) render();
+  if (shown() !== before && canRedrawSettings()) render();
   else if (ui.tab === 'today' && markBefore !== markNow && !moving && !ui.picking) render();
 }
 
-function setGroupList(code, data) {
-  ui.groupList = { code, time: Date.now(), you: data.you, members: data.members ?? [], picks: data.picks ?? [] };
-  try {
-    localStorage.setItem(GROUP_LIST_KEY, JSON.stringify(ui.groupList));
-  } catch {
-    // Not kept for offline use: fetched again next time.
+/** Keeps a group's list answer, and the group's name as its members last set it. */
+function setGroupList(group, data) {
+  const groupName = data.groupName == null ? null : cleanName(data.groupName) || null;
+  ui.groupLists.set(group.code, { code: group.code, time: Date.now(), you: data.you, groupName, members: data.members ?? [], picks: data.picks ?? [] });
+  saveGroupLists();
+  if (data.groupName !== undefined && group.groupName !== groupName) {
+    group.groupName = groupName;
+    saveGroups();
   }
 }
 
@@ -1305,7 +1355,7 @@ function closeFriends() {
 }
 
 function overlayFriends() {
-  const who = friendsPicks(currentGroupList(), Date.now()).get(ui.friends) ?? [];
+  const who = friendsPicks(currentGroupLists(), Date.now()).get(ui.friends) ?? [];
   return sheet(
     `${t('friendsTitle')}: ${dishById(ui.friends)?.name ?? ''}`,
     // Empty when the 💞 that opened it was drawn before the picks changed (an open list isn't redrawn).
@@ -1322,173 +1372,298 @@ function overlayFriends() {
 
 function groupError({ status, data }) {
   if (status === 0) return t('groupOffline');
-  const key = { 'no-group': 'groupNoGroup', full: 'groupFull', 'bad-name': 'groupNameMissing' }[data?.error];
+  const key = { 'no-group': 'groupNoGroup', full: 'groupFull', 'bad-name': 'groupNameMissing', 'bad-group-name': 'groupNameMissingGroup' }[data?.error];
   return t(key ?? 'groupError');
 }
 
-/** Runs one call to the group function from Ajustes, showing "busy" and any error. */
-async function groupCall(call, onOk) {
+/** Runs one call to the group function from Ajustes, showing "busy" and any error (in that group's box, or the form's). */
+async function groupCall(call, onOk, errorFor = null) {
   const form = ui.groupForm;
   form.busy = true;
   form.error = null;
+  form.errorFor = errorFor;
   render();
   const res = await call;
   form.busy = false;
   if (res.ok) onOk(res.data);
+  // The server says this phone isn't in that group any more: drop it, with a banner, instead of "try again".
+  else if (errorFor && errorFor !== 'me' && res.status === 403 && res.data?.error === 'not-member') return leftGroup(errorFor, true);
   else form.error = groupError(res);
   commit();
 }
 
-/** "Crear un grupo" (create = true) or "Unirme". */
+/** "Crear un grupo" (create = true) or "Unirme": with your name and this phone's secret, the same in every group (#33). */
 function enterGroup(create) {
   const form = ui.groupForm;
-  const name = cleanName(form.name);
+  const groups = state.settings.groups;
+  // Your name, the same in every group. One saved before the stricter rule (#34), like "...",
+  // is refused by the server: it has to be changed first, in "Tu nombre".
+  const name = cleanName(groups.length > 0 ? groups[0].name : form.name);
+  const groupName = cleanName(form.groupName);
   const code = create ? null : normalizeCode(form.code);
-  form.error = !name ? t('groupNameMissing') : !create && !code ? t('groupBadCode') : null;
+  form.errorFor = groups.length > 0 && !name ? 'me' : null;
+  form.error =
+    groups.length >= GROUP.max
+      ? t('groupMaxReached', { n: GROUP.max })
+      : !name
+        ? t(groups.length > 0 ? 'groupNameFixFirst' : 'groupNameMissing')
+        : create && !groupName
+          ? t('groupNameMissingGroup')
+          : !create && !code
+            ? t('groupBadCode')
+            : !create && groups.some((g) => g.code === code)
+              ? t('groupAlreadyIn')
+              : null;
   if (form.error) return render();
-  // A join retried after a lost answer must be the same member (the server then just
-  // renames), not a second one: the form keeps its secret until it's reset.
-  const secret = create ? newSecret() : (form.secret ??= newSecret());
-  groupCall(create ? createGroup(secret, name) : joinGroup(code, secret, name), (data) => {
-    state.settings.group = { code: data.code, secret, name, sharing: true, queue: [] };
-    setGroupList(data.code, data);
-    ui.groupForm = { name: '', code: '', error: null, busy: false };
+  // The phone's secret. Before its first group, a join retried after a lost answer must be
+  // the same member (the server then just renames), not a second one: the form keeps it until then.
+  const secret = groups[0]?.secret ?? (form.secret ??= newSecret());
+  groupCall(create ? createGroup(secret, name, groupName) : joinGroup(code, secret, name), (data) => {
+    if (groupByCode(data.code)) return; // two taps: already in
+    // Another tab added a group meanwhile (the cap reached, or a first group with another
+    // secret), or this copy turned read-only: it can't be kept, so out of it again.
+    const first = state.settings.groups[0];
+    if (ui.readOnly || state.settings.groups.length >= GROUP.max || (first && first.secret !== secret)) {
+      leaveGroup({ code: data.code, secret });
+      ui.groupForm.error = state.settings.groups.length >= GROUP.max ? t('groupMaxReached', { n: GROUP.max }) : t('groupError');
+      return;
+    }
+    const group = { code: data.code, secret, name, groupName: null, sharing: true, queue: [] };
+    state.settings.groups.push(group);
+    setGroupList(group, data);
+    ui.openGroups = new Set([group.code]); // the new one open, to invite people to it
+    ui.groupForm = newGroupForm();
   });
 }
 
-/** A new name: joining again with the same secret replaces the old one. */
-function renameInGroup() {
-  const group = state.settings.group;
-  const name = cleanName(ui.groupForm.name);
+/**
+ * A new name for you, in every group: joining again with the same secret
+ * renames you. A group where it fails keeps your old name, and the error,
+ * under "Tu nombre", says which; "Cambiar" again tries them all.
+ */
+async function renameMe() {
+  const form = ui.groupForm;
+  const name = cleanName(form.name);
+  form.errorFor = 'me';
   if (!name) {
-    ui.groupForm.error = t('groupNameMissing');
+    form.error = t('groupNameMissing');
     return render();
   }
-  groupCall(joinGroup(group.code, group.secret, name), (data) => {
-    group.name = name;
-    setGroupList(group.code, data);
-    ui.groupForm.name = '';
-  });
+  form.busy = true;
+  form.error = null;
+  render();
+  const failed = [];
+  let offline = false;
+  for (const { code } of [...state.settings.groups]) {
+    // Each group as the state has it now: one left meanwhile (here or in another tab) is skipped,
+    // or the join would put you back in it.
+    const group = groupByCode(code);
+    if (!group || leaving.has(code)) continue;
+    const res = await joinGroup(code, group.secret, name);
+    const now = groupByCode(code);
+    if (res.ok && now) {
+      now.name = name;
+      setGroupList(now, res.data);
+    } else if (res.ok) {
+      leaveGroup({ code, secret: group.secret }); // left while the join was out: out of it again
+    } else if (res.status === 404 && res.data?.error === 'no-group') {
+      leftGroup(code, true); // nobody is in it any more
+    } else {
+      failed.push(groupLabel(now ?? group));
+      offline ||= res.status === 0;
+    }
+  }
+  ui.groupForm.busy = false;
+  ui.groupForm.errorFor = 'me';
+  if (failed.length > 0) ui.groupForm.error = t(offline ? 'groupRenameFailedOffline' : 'groupRenameFailed', { groups: failed.join(', ') });
+  else ui.groupForm.name = '';
+  commit();
 }
 
-async function leaveMyGroup() {
-  const group = state.settings.group;
-  if (!window.confirm(t('groupLeaveConfirm'))) return;
+/** A new name for a group, for everyone in it. */
+function renameTheGroup(group) {
+  const form = ui.groupForm;
+  const groupName = cleanName(form.rename[group.code] ?? '');
+  if (!groupName) {
+    form.errorFor = group.code;
+    form.error = t('groupNameMissingGroup');
+    return render();
+  }
+  groupCall(
+    renameGroup(group, groupName),
+    (data) => {
+      const now = groupByCode(group.code);
+      if (now) setGroupList(now, data);
+      delete ui.groupForm.rename[group.code];
+    },
+    group.code,
+  );
+}
+
+async function leaveTheGroup(group) {
+  const { code } = group;
+  if (!window.confirm(t('groupLeaveConfirm', { name: groupLabel(group) }))) return;
   ui.groupForm.busy = true;
+  ui.groupForm.error = null;
   render();
-  // Nothing more goes out. A pick on its way lands before the leave deletes it, and
-  // a list on its way can't mark you "seen today" (a new key) after the leave.
+  // Nothing more goes out to this group. A pick on its way lands before the leave deletes it,
+  // and a list on its way can't mark you "seen today" (a new key) after the leave.
+  leaving.add(code);
   const unpicks = group.queue.filter((o) => o.op === 'unpick');
   group.queue = [];
-  saveState(state);
+  saveGroups();
   await flushing;
   await listing;
   const res = await leaveGroup(group);
+  leaving.delete(code);
   ui.groupForm.busy = false;
   // Not in it on the server either: nothing left there to delete.
-  if (res.ok || (res.status === 403 && res.data?.error === 'not-member')) return leftGroup();
+  if (res.ok || (res.status === 403 && res.data?.error === 'not-member')) return leftGroup(code);
   // Still in the group: picks already taken back with "Deshacer" must still go.
-  group.queue = [...unpicks, ...group.queue];
+  const now = groupByCode(code);
+  if (now) now.queue = [...unpicks, ...now.queue];
+  ui.groupForm.errorFor = code;
   ui.groupForm.error = res.status === 0 ? t('groupOfflineLeave') : t('groupError');
   commit();
   flushGroup();
 }
 
-/** The invitation: the app's address, the steps and the code. */
-function inviteText() {
+/** The invitation: the group's name, the app's address, the steps and the code. */
+function inviteText(group) {
   const url = new URL('./', window.location.href).href;
-  return t('groupInviteText', { url, code: formatCode(state.settings.group.code) });
+  const code = formatCode(group.code);
+  return group.groupName ? t('groupInviteTextNamed', { url, code, group: group.groupName }) : t('groupInviteText', { url, code });
 }
 
 /** "Invitar": the phone's share sheet (WhatsApp…). Only shown where there is one. */
-async function shareInvite() {
+async function shareInvite(group) {
   try {
-    await navigator.share({ text: inviteText() });
+    await navigator.share({ text: inviteText(group) });
   } catch {
     // The share sheet was closed: nothing to do.
   }
 }
 
 /** "Copiar": the whole invitation, to paste anywhere. */
-async function copyInvite() {
-  const text = inviteText();
+async function copyInvite(group) {
+  const text = inviteText(group);
   try {
     await navigator.clipboard.writeText(text);
-    ui.groupInvited = true;
+    ui.groupInvited = group.code;
   } catch {
     window.prompt(t('groupInviteCopy'), text);
   }
   render();
 }
 
-function groupSection() {
-  const group = state.settings.group;
+const groupInput = (id, value, onInput, props = {}) =>
+  h('input', { id, type: 'text', value, autocomplete: 'off', oninput: (e) => onInput(e.target.value), ...props });
+const groupField = (input, label) => h('div', { class: 'field' }, h('label', { for: input.id }, label), input);
+const groupErrorLine = (code) => h('p', { class: 'error', role: 'alert' }, ui.groupForm.errorFor === code ? (ui.groupForm.error ?? '') : '');
+
+/** One group in Ajustes: its name; tapped open, its members, code, invitation, name, sharing and "Salir". */
+function groupBox(group) {
   const form = ui.groupForm;
-  const textInput = (id, key, props = {}) =>
-    h('input', { id, type: 'text', value: form[key], autocomplete: 'off', oninput: (e) => (form[key] = e.target.value), ...props });
-  const field = (input, label) => h('div', { class: 'field' }, h('label', { for: input.id }, label), input);
   const busy = form.busy || ui.readOnly;
-  const local = isLocalHost(window.location.hostname) && h('p', { class: 'help' }, t('groupLocalhost'));
-  const error = h('p', { class: 'error', role: 'alert' }, form.error ?? '');
-
-  if (!group) {
-    return [
-      h('h2', { class: 'section' }, t('groupTitle')),
-      h('p', { class: 'help' }, t('groupHelp')),
-      h('p', { class: 'help' }, t('groupPrivacy')),
-      field(textInput('g-name', 'name', { maxLength: 30 }), t('groupYourName')),
-      button(t('groupCreate'), () => enterGroup(true), 'primary', { disabled: busy }),
-      field(textInput('g-code', 'code', { placeholder: 'ABCD-2345', autocapitalize: 'characters', spellcheck: false }), t('groupCodeLabel')),
-      button(t('groupJoin'), () => enterGroup(false), '', { disabled: busy }),
-      local,
-      error,
-    ];
-  }
-
-  const list = currentGroupList();
+  const list = ui.groupLists.get(group.code);
   const others = (list?.members ?? []).filter((m) => m.id !== list.you).map((m) => m.name);
-  return [
-    h('h2', { class: 'section' }, t('groupTitle')),
-    h('p', { class: 'help' }, t('groupHelp')),
-    h('p', { class: 'group-code' }, h('span', { class: 'label' }, t('groupCodeLabel')), h('strong', null, formatCode(group.code))),
+  const label = groupLabel(group);
+  const box = h(
+    'details',
+    { class: 'fold group', open: ui.openGroups.has(group.code) },
+    // The comma is for screen readers, which would otherwise read "Cluben pausa".
+    h('summary', null, label, !group.sharing && [h('span', { class: 'sr-only' }, ', '), h('span', { class: 'badge inline' }, t('groupPaused'))]),
     h(
       'div',
-      { class: 'row' },
-      navigator.share && button(t('groupInvite'), shareInvite, 'primary', { disabled: ui.readOnly }),
-      button(ui.groupInvited ? t('groupInvited') : t('groupCopy'), copyInvite, navigator.share ? '' : 'primary', { disabled: ui.readOnly }),
-    ),
-    list && h('p', { class: 'help' }, others.length > 0 ? t('groupMembers', { list: others.join(', ') }) : t('groupAlone')),
-    h(
-      'div',
-      { class: 'field' },
-      h('label', { for: 'g-rename' }, t('groupYourName')),
+      { class: 'fold-body' },
+      list && h('p', { class: 'help' }, others.length > 0 ? t('groupMembers', { list: others.join(', ') }) : t('groupAlone')),
+      h('p', { class: 'group-code' }, h('span', { class: 'label' }, t('groupCodeLabel')), h('strong', null, formatCode(group.code))),
       h(
         'div',
         { class: 'row' },
-        textInput('g-rename', 'name', { maxLength: 30, placeholder: group.name }),
-        button(t('groupSaveName'), renameInGroup, '', { disabled: busy }),
+        navigator.share && button(t('groupInvite'), () => shareInvite(group), 'primary', { disabled: ui.readOnly }),
+        button(ui.groupInvited === group.code ? t('groupInvited') : t('groupCopy'), () => copyInvite(group), navigator.share ? '' : 'primary', {
+          disabled: ui.readOnly,
+        }),
       ),
+      h(
+        'div',
+        { class: 'field' },
+        h('label', { for: `g-rename-${group.code}` }, t('groupRenameLabel')),
+        h(
+          'div',
+          { class: 'row' },
+          groupInput(`g-rename-${group.code}`, form.rename[group.code] ?? '', (v) => (form.rename[group.code] = v), { maxLength: 30, placeholder: label }),
+          button(t('groupSaveName'), () => renameTheGroup(group), '', { disabled: busy }),
+        ),
+      ),
+      h(
+        'label',
+        { class: 'check' },
+        h('input', {
+          type: 'checkbox',
+          checked: group.sharing,
+          disabled: ui.readOnly,
+          onchange: (e) => {
+            group.sharing = e.target.checked;
+            if (!group.sharing) dropQueuedPicks(group);
+            commit();
+          },
+        }),
+        h('span', null, h('strong', null, t('groupSharing')), h('span', { class: 'help' }, t('groupSharingHelp'))),
+      ),
+      group.queue.length > 0 && h('p', { class: 'help' }, t('groupWaiting', { n: group.queue.length })),
+      button(t('groupLeave'), () => leaveTheGroup(group), 'danger', { disabled: busy }),
+      groupErrorLine(group.code),
     ),
-    h(
-      'label',
-      { class: 'check' },
-      h('input', {
-        type: 'checkbox',
-        checked: group.sharing,
-        disabled: ui.readOnly,
-        onchange: (e) => {
-          group.sharing = e.target.checked;
-          if (!group.sharing) dropQueuedPicks(group);
-          commit();
-        },
-      }),
-      h('span', null, h('strong', null, t('groupSharing')), h('span', { class: 'help' }, t('groupSharingHelp'))),
-    ),
-    group.queue.length > 0 && h('p', { class: 'help' }, t('groupWaiting', { n: group.queue.length })),
-    local,
+  );
+  // Opened or closed, it stays that way through redraws.
+  box.addEventListener('toggle', () => (box.open ? ui.openGroups.add(group.code) : ui.openGroups.delete(group.code)));
+  return box;
+}
+
+function groupSection() {
+  const groups = state.settings.groups;
+  const form = ui.groupForm;
+  const busy = form.busy || ui.readOnly;
+  const me = groups[0];
+  return [
+    h('h2', { class: 'section' }, t('groupTitle')),
+    h('p', { class: 'help' }, t('groupHelp')),
+    // Your name, the same in every group.
+    me &&
+      h(
+        'div',
+        { class: 'field' },
+        h('label', { for: 'g-rename' }, t('groupYourName')),
+        h(
+          'div',
+          { class: 'row' },
+          groupInput('g-rename', form.name, (v) => (form.name = v), { maxLength: 30, placeholder: me.name }),
+          button(t('groupSaveName'), renameMe, '', { disabled: busy }),
+        ),
+      ),
+    me && groupErrorLine('me'),
+    groups.length > 0 && h('div', { class: 'groups' }, groups.map(groupBox)),
+    groups.length >= GROUP.max
+      ? h('p', { class: 'help' }, t('groupMaxReached', { n: GROUP.max }))
+      : [
+          groups.length > 0 && h('h3', { class: 'groups-add' }, t('groupAddTitle')),
+          !me && groupField(groupInput('g-name', form.name, (v) => (form.name = v), { maxLength: 30 }), t('groupYourName')),
+          groupField(
+            groupInput('g-group-name', form.groupName, (v) => (form.groupName = v), { maxLength: 30, placeholder: t('groupNamePlaceholder') }),
+            t('groupNameLabel'),
+          ),
+          button(t('groupCreate'), () => enterGroup(true), 'primary', { disabled: busy }),
+          groupField(
+            groupInput('g-code', form.code, (v) => (form.code = v), { placeholder: 'ABCD-2345', autocapitalize: 'characters', spellcheck: false }),
+            t('groupCodeLabel'),
+          ),
+          button(t('groupJoin'), () => enterGroup(false), '', { disabled: busy }),
+        ],
+    isLocalHost(window.location.hostname) && h('p', { class: 'help' }, t('groupLocalhost')),
     h('p', { class: 'help' }, t('groupPrivacy')),
-    button(t('groupLeave'), leaveMyGroup, 'danger', { disabled: busy }),
-    error,
+    groupErrorLine(null),
   ];
 }
 
@@ -1697,7 +1872,7 @@ function pinFromList(side) {
 function overlayPicker() {
   // Sides that go with at least one main can be chosen first.
   const pinnable = state.dishes.filter((d) => d.role === 'side' && mainCandidates(state.dishes, d.id).length > 0);
-  const friends = friendsPicks(currentGroupList(), Date.now());
+  const friends = friendsPicks(currentGroupLists(), Date.now());
   return sheet(
     `📖 ${t('pickTitle')}`,
     h('p', { class: 'help' }, t('pickHelp')),
