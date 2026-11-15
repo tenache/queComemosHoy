@@ -1289,15 +1289,19 @@ function openFriends(dishId) {
   document.querySelector('#overlay .sheet-foot button')?.focus();
 }
 
-/** Back to what was under who picked: the card, or the list where it was scrolled, on the 💞 that opened it. */
+/**
+ * Back to what was under who picked: the card, or the list where it was
+ * scrolled, on the 💞 that opened it (or its row, if that 💞 is gone now).
+ */
 function closeFriends() {
   const dishId = ui.friends;
   ui.friends = null;
   render();
   const list = ui.picking && document.querySelector('#overlay .sheet');
   if (list) list.scrollTop = ui.pickerScroll;
-  const mark = list ? list.querySelector(`[data-dish="${CSS.escape(dishId)}"]`) : document.querySelector('.friends-mark');
-  mark?.focus({ preventScroll: true });
+  const item = list?.querySelector(`.pick-item[data-dish="${CSS.escape(dishId)}"]`);
+  const back = list ? (item?.querySelector('.pick-mark') ?? item?.querySelector('.list-row')) : document.querySelector('.friends-mark');
+  back?.focus({ preventScroll: true });
 }
 
 function overlayFriends() {
@@ -1703,7 +1707,7 @@ function overlayPicker() {
       mainCandidates(state.dishes).map((dish) =>
         h(
           'li',
-          { class: 'pick-item' },
+          { class: 'pick-item', 'data-dish': dish.id },
           h(
             'button',
             { type: 'button', class: friends.has(dish.id) ? 'list-row marked' : 'list-row', onclick: () => pickFromList(dish) },
@@ -1722,7 +1726,6 @@ function overlayPicker() {
               {
                 type: 'button',
                 class: 'star pick-mark',
-                'data-dish': dish.id,
                 'aria-label': t('friendsMarkOf', { name: dish.name }),
                 title: t('friendsMark'),
                 onclick: () => openFriends(dish.id),
