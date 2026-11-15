@@ -131,7 +131,8 @@ const ui = {
   tuningCopied: false,
   groupForm: { name: '', code: '', error: null, busy: false }, // Ajustes → Grupo de amigos (+ secret: kept so a retried join is the same member)
   groupList: readCachedGroupList(), // {code, time, you, members, picks}: the group function's last list
-  friends: null, // dishId while the "💞 También lo eligieron" sheet is open
+  friends: null, // dishId while the "💞 También lo eligieron" sheet is open (over the card, or over the list)
+  pickerScroll: 0, // where the list was scrolled when its 💞 was tapped: closing who picked goes back there
   groupInvited: false, // the invitation was copied ("Copiar")
 };
 
@@ -1265,10 +1266,11 @@ async function refreshGroupList(force = false) {
   setGroupList(group.code, res.data);
   const membersNow = JSON.stringify([res.data.you, res.data.members]);
   const markNow = ui.currentId && friendsPicks(currentGroupList(), Date.now()).has(ui.currentId);
-  // Redraw only what changed where it shows: never under someone typing, nor a card being dragged or flying out.
+  // Redraw only what changed where it shows: never under someone typing, nor a card being dragged or
+  // flying out, nor the open list (it would jump back to the top; its 💞 are current when it opens again).
   const moving = document.querySelector('.card.dragging, .card.flying');
   if (membersNow !== membersBefore && canRedrawSettings()) render();
-  else if (ui.tab === 'today' && markBefore !== markNow && !moving) render();
+  else if (ui.tab === 'today' && markBefore !== markNow && !moving && !ui.picking) render();
 }
 
 function setGroupList(code, data) {
@@ -1281,24 +1283,40 @@ function setGroupList(code, data) {
 }
 
 function openFriends(dishId) {
+  ui.pickerScroll = ui.picking ? (document.querySelector('#overlay .sheet')?.scrollTop ?? 0) : 0;
   ui.friends = dishId;
   render();
+  document.querySelector('#overlay .sheet-foot button')?.focus();
+}
+
+/**
+ * Back to what was under who picked: the card, or the list where it was
+ * scrolled, on the 💞 that opened it (or its row, if that 💞 is gone now).
+ */
+function closeFriends() {
+  const dishId = ui.friends;
+  ui.friends = null;
+  render();
+  const list = ui.picking && document.querySelector('#overlay .sheet');
+  if (list) list.scrollTop = ui.pickerScroll;
+  const item = list?.querySelector(`.pick-item[data-dish="${CSS.escape(dishId)}"]`);
+  const back = list ? (item?.querySelector('.pick-mark') ?? item?.querySelector('.list-row')) : document.querySelector('.friends-mark');
+  back?.focus({ preventScroll: true });
 }
 
 function overlayFriends() {
   const who = friendsPicks(currentGroupList(), Date.now()).get(ui.friends) ?? [];
-  const close = () => {
-    ui.friends = null;
-    render();
-  };
   return sheet(
     `${t('friendsTitle')}: ${dishById(ui.friends)?.name ?? ''}`,
-    h(
-      'ul',
-      { class: 'friends-list' },
-      who.map((w) => h('li', null, h('span', null, w.name), h('span', { class: 'muted' }, t(w.today ? 'friendsToday' : 'friendsYesterday')))),
-    ),
-    h('div', { class: 'row sheet-foot' }, button(t('close'), close)),
+    // Empty when the 💞 that opened it was drawn before the picks changed (an open list isn't redrawn).
+    who.length === 0
+      ? h('p', { class: 'help' }, t('friendsNone'))
+      : h(
+          'ul',
+          { class: 'friends-list' },
+          who.map((w) => h('li', null, h('span', null, w.name), h('span', { class: 'muted' }, t(w.today ? 'friendsToday' : 'friendsYesterday')))),
+        ),
+    h('div', { class: 'row sheet-foot' }, button(t('close'), closeFriends)),
   );
 }
 
@@ -1671,10 +1689,15 @@ function pinFromList(side) {
   render();
 }
 
-/** The whole dish list, "never show" ones included. Tapping one logs it as tonight's meal. */
+/**
+ * The whole dish list, "never show" ones included. Tapping one logs it as
+ * tonight's meal; its 💞, over the end of the row but not inside it (#28),
+ * opens who picked it.
+ */
 function overlayPicker() {
   // Sides that go with at least one main can be chosen first.
   const pinnable = state.dishes.filter((d) => d.role === 'side' && mainCandidates(state.dishes, d.id).length > 0);
+  const friends = friendsPicks(currentGroupList(), Date.now());
   return sheet(
     `📖 ${t('pickTitle')}`,
     h('p', { class: 'help' }, t('pickHelp')),
@@ -1684,10 +1707,10 @@ function overlayPicker() {
       mainCandidates(state.dishes).map((dish) =>
         h(
           'li',
-          null,
+          { class: 'pick-item', 'data-dish': dish.id },
           h(
             'button',
-            { type: 'button', class: 'list-row', onclick: () => pickFromList(dish) },
+            { type: 'button', class: friends.has(dish.id) ? 'list-row marked' : 'list-row', onclick: () => pickFromList(dish) },
             h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
             h(
               'span',
@@ -1697,6 +1720,18 @@ function overlayPicker() {
             ),
             dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
           ),
+          friends.has(dish.id) &&
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'star pick-mark',
+                'aria-label': t('friendsMarkOf', { name: dish.name }),
+                title: t('friendsMark'),
+                onclick: () => openFriends(dish.id),
+              },
+              '💞',
+            ),
         ),
       ),
     ),
@@ -2102,12 +2137,12 @@ function render() {
           ? overlayMissing()
           : ui.sideSheet
             ? overlaySide()
-            : ui.picking
-              ? overlayPicker()
-              : ui.recipe
-                ? overlayRecipe()
-                : ui.friends
-                  ? overlayFriends()
+            : ui.friends // above the list, which it may have been opened from
+              ? overlayFriends()
+              : ui.picking
+                ? overlayPicker()
+                : ui.recipe
+                  ? overlayRecipe()
                   : null;
   $('overlay').replaceChildren(...(overlay ? [overlay] : []));
   document.body.classList.toggle('has-overlay', Boolean(overlay));
@@ -2204,12 +2239,16 @@ document.addEventListener('visibilitychange', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.picking || ui.sideSheet || ui.recipe || ui.friends)) {
+  // Who picked closes alone (back to the list it may have come from), when it's the sheet showing (see render()).
+  if (e.key === 'Escape' && ui.friends && !ui.afterMeal && !ui.mood && !ui.favorites && !ui.sheet && !ui.sideSheet) {
+    closeFriends();
+    return;
+  }
+  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.picking || ui.sideSheet || ui.recipe)) {
     ui.sheet = null;
     ui.picking = false;
     ui.sideSheet = null;
     ui.recipe = null;
-    ui.friends = null;
     render();
     return;
   }

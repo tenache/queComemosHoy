@@ -1078,6 +1078,22 @@ input[type='number'] {
   color: var(--muted);
 }
 
+/* "Elegir de la lista": a friend's 💞 (#28) sits over the end of its row, so every row keeps the same width. */
+.pick-item {
+  position: relative;
+}
+
+.pick-item .list-row.marked {
+  padding-right: 52px;
+}
+
+.pick-mark {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+}
+
 .list-heading {
   font-size: 1.1rem;
   margin-top: 8px;
