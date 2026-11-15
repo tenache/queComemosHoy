@@ -118,12 +118,17 @@ async function writeMember(store, code, group, you, name, now) {
   group.memberKeys = [...group.memberKeys.filter((m) => m.id !== you), { id: you, key }];
 }
 
-/** Writes the group's name, and only then deletes the older ones: the group is never without one. */
+/**
+ * Writes the group's name, and only then deletes the older ones: a rename
+ * never leaves the group without one. Its time is after the name it
+ * replaces, even on a server whose clock is behind the one that wrote it.
+ */
 async function writeGroupName(store, code, group, groupName, now) {
-  const key = `g/${code}/n/${Math.floor(now)}/${Buffer.from(groupName).toString('base64url')}`;
+  const time = Math.max(Math.floor(now), (group.nameKeys.at(-1)?.time ?? -1) + 1);
+  const key = `g/${code}/n/${time}/${Buffer.from(groupName).toString('base64url')}`;
   await store.set(key, '1');
   await deleteAll(store, group.nameKeys.map((n) => n.key).filter((k) => k !== key));
-  group.nameKeys = [{ time: Math.floor(now), name: groupName, key }];
+  group.nameKeys = [{ time, name: groupName, key }];
   group.groupName = groupName;
 }
 
@@ -181,8 +186,17 @@ const ACTIONS = {
       const code = newCode();
       if ((await keys(store, `g/${code}/`)).length > 0) continue;
       const group = parseGroup([]);
+      // You first, then the name: prune() deletes the name of a group with nobody in it.
       await writeMember(store, code, group, you, name, now);
-      if (groupName) await writeGroupName(store, code, group, groupName, now);
+      if (groupName) {
+        try {
+          await writeGroupName(store, code, group, groupName, now);
+        } catch {
+          // No half-made group for a retry to leave behind: take yourself out again.
+          await deleteAll(store, group.memberKeys.map((m) => m.key));
+          return fail(503, 'try-again');
+        }
+      }
       return json(200, { code, ...view(group, you, now) });
     }
     return fail(503, 'try-again');
@@ -210,7 +224,8 @@ const ACTIONS = {
 
   async leave(store, body, now, code, group, you) {
     const mine = [...group.memberKeys.filter((m) => m.id === you), ...group.picks.filter((p) => p.member === you)];
-    // The last one to leave takes the group's name too (prune() catches any left by a race).
+    // The last one to leave takes the group's name too. Two last ones leaving at once can leave it
+    // behind, and prune() deletes it; a join at that moment can find the group without a name.
     const last = group.members.every((m) => m.id === you);
     await deleteAll(store, [...mine, ...(last ? group.nameKeys : [])].map((x) => x.key));
     return json(200, { ok: true });
@@ -220,7 +235,8 @@ const ACTIONS = {
     const groupName = cleanGroupName(body.groupName);
     if (!groupName) return fail(400, 'bad-group-name');
     if (groupName !== group.groupName || group.nameKeys.length > 1) await writeGroupName(store, code, group, groupName, now);
-    return json(200, view(group, you, now));
+    // The name as the group has it now: another rename at the same moment may have won.
+    return json(200, view(await readGroup(store, code), you, now));
   },
 
   async list(store, body, now, code, group, you) {

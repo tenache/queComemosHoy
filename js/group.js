@@ -34,13 +34,17 @@ const PICK_ID_RE = /^[0-9a-z]{6,24}$/;
 /**
  * Trimmed, one space between words, no control characters and no broken
  * emoji halves, at most GROUP.nameLength characters (an emoji counts as one).
+ * No invisible characters or ones that turn the text around (a name goes into
+ * the WhatsApp invitation, #33), and '' unless there's a letter, number or
+ * symbol (emoji included) to see. The joiners inside emoji stay.
  */
 export function cleanName(raw) {
   const text = String(raw ?? '')
-    .replace(/[\u0000-\u001f\u007f]|[\ud800-\udfff]/gu, '')
+    .replace(/[\u0000-\u001f\u007f]|[\ud800-\udfff]|[\u200b\u200e\u200f\u202a-\u202e\u2060-\u2069\ufeff]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return [...text].slice(0, GROUP.nameLength).join('').trim();
+  const name = [...text].slice(0, GROUP.nameLength).join('').trim();
+  return /[\p{L}\p{N}\p{S}]/u.test(name) ? name : '';
 }
 
 /** A code as typed or pasted (" abcd-2345 ") → "ABCD2345", or null if it can't be one. */
