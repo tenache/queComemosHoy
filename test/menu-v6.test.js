@@ -59,8 +59,7 @@ test('migration v5 → v6: an untouched phone gets the new menu and Árabe, hist
   const before = JSON.stringify(blob);
   const state = normalizeState(blob);
   assert.equal(JSON.stringify(blob), before, 'the input is not changed');
-  assert.equal(SCHEMA_VERSION, 6);
-  assert.equal(state.schemaVersion, 6);
+  assert.equal(state.schemaVersion, SCHEMA_VERSION);
 
   assert.deepEqual(byId(state.dishes, 'milanesas-berenjena').sides, MILANESA_SIDES);
   assert.equal(byId(state.dishes, 'lentejas').name, 'Guiso de lentejas');

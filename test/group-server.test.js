@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ALLOWED_ORIGINS, LIMITS, dayOf, handle, memberIdOf, prune } from '../netlify/group-core.mjs';
-import { CODE_ALPHABET, flushQueue, queuePick, queueUnpick } from '../js/group.js';
+import { CODE_ALPHABET, flushQueue, friendCounts, friendsPicks, queuePick, queueUnpick } from '../js/group.js';
 
 const NOW = Date.UTC(2026, 10, 14, 20, 0, 0);
 const DAY = 24 * 60 * 60 * 1000;
@@ -231,6 +231,40 @@ test('end to end: picks queued on one phone reach the other through the function
   assert.deepEqual(nico.queue, []);
   const { data } = await call(store, { action: 'list', code, secret: ANA });
   assert.deepEqual(data.picks, [{ member: memberIdOf(NICO), dishId: 'milanesas-pure', time: NOW }]);
+});
+
+test('two groups end to end (#33): each friend sees only their own group, you see both, and a friend in both counts once', async () => {
+  const store = memoryStore();
+  const fetchImpl = (url, init) => handle(new Request(new URL(url, 'https://example.netlify.app/'), init), store, NOW);
+  const SOL = secret(4);
+  // You (ANA) and Sol are in both groups; Nico only in the family's, Leo only in the club's.
+  const family = (await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: 'Familia' })).data.code;
+  const club = (await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: 'Club' })).data.code;
+  for (const [code, s, name] of [[family, NICO, 'Nico'], [family, SOL, 'Sol'], [club, LEO, 'Leo'], [club, SOL, 'Sol']]) {
+    await call(store, { action: 'join', code, secret: s, name });
+  }
+  const phone = (code, s, name) => ({ code, secret: s, name, groupName: null, sharing: true, queue: [] });
+  const send = async (groups, dishId, pickId) => {
+    for (const g of groups) queuePick(g, dishId, NOW, pickId);
+    for (const g of groups) assert.equal(await flushQueue(() => g, () => {}, fetchImpl), 'done');
+  };
+  await send([phone(family, NICO, 'Nico')], 'pizza', 'pick000001');
+  await send([phone(club, LEO, 'Leo')], 'paella', 'pick000002');
+  await send([phone(family, SOL, 'Sol'), phone(club, SOL, 'Sol')], 'milanesas-pure', 'pick000003'); // one pick, both groups
+  await send([phone(family, ANA, 'Ana'), phone(club, ANA, 'Ana')], 'pizza', 'pick000004'); // yours, both groups
+
+  const lists = async (s, ...codes) => Promise.all(codes.map(async (code) => (await call(store, { action: 'list', code, secret: s })).data));
+  const ana = await lists(ANA, family, club);
+  assert.equal(ana[0].you, ana[1].you, 'the same secret: the same member id in both groups');
+  assert.deepEqual(ana.map((l) => l.groupName), ['Familia', 'Club']);
+  const counts = friendCounts(ana, NOW);
+  assert.deepEqual([...counts].sort(), [['milanesas-pure', 1], ['paella', 1], ['pizza', 1]].sort(), 'Sol once; your own pizza not counted');
+  // Leo, in the club only, never sees Nico's pizza, nor anything of the family's.
+  const leo = friendsPicks(await lists(LEO, club), NOW);
+  assert.deepEqual(leo.get('pizza')?.map((w) => w.name), ['Ana']);
+  assert.equal(JSON.stringify(await lists(LEO, club)).includes('Nico'), false);
+  // And Nico never sees Leo's paella.
+  assert.equal(friendsPicks(await lists(NICO, family), NOW).has('paella'), false);
 });
 
 /** memoryStore() with every call taking a few ms, so calls overlap like they do on Netlify. */

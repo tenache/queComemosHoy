@@ -4,7 +4,7 @@
 import { CHANGED_IN_V6, NEW_IN_V3, NEW_IN_V6, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
 import { ACTIONS, EFFORT, FAVORITES_MAX, LIKING, MOOD_IDS, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
 import { FOODS } from './nutrition.js';
-import { cleanGroup } from './group.js';
+import { cleanGroup, cleanGroups } from './group.js';
 import { cleanParams } from './params.js';
 import { DEFAULT_CUISINES, NEW_CUISINES_IN_V6, addCuisine, cleanCuisine, cleanCuisines } from './wheel.js';
 
@@ -13,7 +13,8 @@ import { DEFAULT_CUISINES, NEW_CUISINES_IN_V6, addCuisine, cleanCuisine, cleanCu
 // 4: recipes the user wrote (`recipe` on a dish) and the portions setting.
 // 5: `effort` on a dish (hidden from the user).
 // 6: no new fields: the starter menu and the wheel change (#29, #30).
-export const SCHEMA_VERSION = 6;
+// 7: several friends' groups (#33): `settings.group` becomes `settings.groups`.
+export const SCHEMA_VERSION = 7;
 export const PORTIONS = { min: 1, max: 12, default: 2 };
 const MAX_RECIPE_ITEMS = 40;
 const MAX_RECIPE_STEPS = 30;
@@ -35,8 +36,8 @@ export function defaultState() {
     // favoritesAsked: the "choose your favourites" question was answered or skipped.
     // params: this phone's tuning (params.js), {key: number}; empty = the defaults.
     // mood: the last answer to "¿Cómo está nuestro cocinero hoy?", {day: 'YYYY-MM-DD', id}; null = never asked.
-    // group: the friends' group this phone is in (group.js, #23); null = none.
-    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null, group: null },
+    // groups: the friends' groups this phone is in (group.js, #23, #33); [] = none.
+    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null, groups: [] },
     cuisines: [...DEFAULT_CUISINES], // the delivery wheel's slices
     deliveries: [], // {time, cuisine | null, manual?: true}
   };
@@ -153,6 +154,13 @@ function migrate(raw) {
     blob.schemaVersion = 5;
   }
   if (blob.schemaVersion === 5) migrateToV6(blob);
+  if (blob.schemaVersion === 6) {
+    // v7: the one group becomes the first of several (#33).
+    const { group, ...settings } = blob.settings && typeof blob.settings === 'object' ? blob.settings : {};
+    const kept = cleanGroup(group);
+    blob.settings = { ...settings, groups: kept ? [kept] : [] };
+    blob.schemaVersion = 7;
+  }
   return blob;
 }
 
@@ -282,7 +290,7 @@ export function normalizeState(input) {
       // Optional and only read on this phone: older copies of the app just drop it, so no schema step.
       params: cleanParams(settings.params),
       mood: cleanMood(settings.mood),
-      group: cleanGroup(settings.group),
+      groups: cleanGroups(settings.groups),
     },
     cuisines: cleanCuisines(raw.cuisines),
     deliveries: (Array.isArray(raw.deliveries) ? raw.deliveries : [])

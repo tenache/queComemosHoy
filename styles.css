@@ -366,6 +366,13 @@ button.chip[aria-pressed='true'] {
   border-bottom: 1px solid var(--line);
 }
 
+/* Ajustes: one box per group (#33), its name showing, tapped open for the rest. */
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .card-body {
   padding: 14px 18px 18px;
   display: flex;

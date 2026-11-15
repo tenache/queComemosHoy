@@ -80,6 +80,32 @@ test('friendsPicks: friends who picked each dish today or yesterday, newest firs
 test('friendsPicks: nothing to show without a list', () => {
   assert.equal(friendsPicks(null, NOON).size, 0);
   assert.equal(friendsPicks({ you: 'me' }, NOON).size, 0);
+  assert.equal(friendsPicks([], NOON).size, 0);
+  assert.equal(friendsPicks([null, { you: 'me' }], NOON).size, 0);
+});
+
+test('friendsPicks across groups (#33): no distinction, and a friend in two groups counts once', () => {
+  // You and Sol are in both groups (the same phone: the same member id in each); Nico only in one, Leo only in the other.
+  const family = { you: 'me', members: [{ id: 'me', name: 'Yo' }, { id: 'sol', name: 'Sol' }, { id: 'nico', name: 'Nico' }], picks: [
+    { member: 'nico', dishId: 'pizza', time: NOON - 2 * HOUR },
+    { member: 'sol', dishId: 'milanesas-pure', time: NOON - 3 * HOUR },
+  ] };
+  const club = { you: 'me', members: [{ id: 'me', name: 'Yo' }, { id: 'sol', name: 'Sol' }, { id: 'leo', name: 'Leo' }], picks: [
+    { member: 'leo', dishId: 'pizza', time: NOON - 1 * HOUR },
+    { member: 'sol', dishId: 'milanesas-pure', time: NOON - 3 * HOUR }, // the same pick, sent to both groups
+    { member: 'me', dishId: 'paella', time: NOON }, // mine, in this group too
+  ] };
+  const got = friendsPicks([family, club], NOON);
+  assert.deepEqual(got.get('pizza'), [
+    { member: 'leo', name: 'Leo', today: true },
+    { member: 'nico', name: 'Nico', today: true },
+  ]);
+  assert.deepEqual(got.get('milanesas-pure'), [{ member: 'sol', name: 'Sol', today: true }], 'Sol once');
+  assert.equal(got.has('paella'), false);
+  assert.deepEqual(friendCounts([family, club], NOON), new Map([['pizza', 2], ['milanesas-pure', 1]]));
+  // Someone who left one group still counts through the other, where they are.
+  const clubWithoutSol = { ...club, members: club.members.filter((m) => m.id !== 'sol') };
+  assert.deepEqual(friendCounts([family, clubWithoutSol], NOON).get('milanesas-pure'), 1);
 });
 
 test('scoreDish: friends lift a main by friendsBoost(n), and leave sides alone', () => {

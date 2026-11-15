@@ -1,7 +1,8 @@
-// Friends' picks (#23), on the phone: the group this phone is in
-// (`settings.group`), the picks waiting to be sent, and the calls to the
-// group function (netlify/functions/group.mjs, at /api/group). Pure except
-// for the calls, which take `fetch` as an argument so the tests can fake it.
+// Friends' picks (#23), on the phone: the groups this phone is in
+// (`settings.groups`, up to GROUP.max, #33), the picks waiting to be sent,
+// and the calls to the group function (netlify/functions/group.mjs, at
+// /api/group). Pure except for the calls, which take `fetch` as an argument
+// so the tests can fake it.
 // The function imports cleanName and the code rules from here, so both sides
 // agree on them.
 
@@ -11,6 +12,7 @@ export const GROUP = {
   nameLength: 30,
   codeLength: 8,
   queueMax: 100, // picks waiting to be sent: the oldest go first when it's full
+  max: 5, // groups per phone (Thomas, #33): each pick and each refresh is one call per group
 };
 // No 0/O or 1/I/L, so a code read aloud or copied by hand can't be mistyped.
 export const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
@@ -95,9 +97,12 @@ function cleanOp(raw) {
 }
 
 /**
- * `settings.group`: {code, secret, name, sharing, queue}, or null when this
- * phone isn't in a group. `sharing` false pauses sending (for testing);
- * `queue` holds the calls not sent yet, in order.
+ * One group this phone is in: {code, secret, name, groupName, sharing,
+ * queue}, or null if it can't be used. `secret` and `name` are this phone's,
+ * the same in every group (#33): the same secret makes the same member id,
+ * so a friend in two of your groups counts once. `groupName` is the group's
+ * name as last heard from the server (null: none yet). `sharing` false
+ * pauses sending; `queue` holds the calls not sent yet, in order.
  */
 export function cleanGroup(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -106,7 +111,16 @@ export function cleanGroup(raw) {
   const name = cleanSavedName(raw.name);
   if (!code || !secret || !name) return null;
   const queue = (Array.isArray(raw.queue) ? raw.queue : []).map(cleanOp).filter(Boolean).slice(-GROUP.queueMax);
-  return { code, secret, name, sharing: raw.sharing !== false, queue };
+  return { code, secret, name, groupName: cleanName(raw.groupName) || null, sharing: raw.sharing !== false, queue };
+}
+
+/** `settings.groups`: the usable groups, once each, at most GROUP.max. */
+export function cleanGroups(raw) {
+  const groups = [];
+  for (const group of (Array.isArray(raw) ? raw : []).map(cleanGroup)) {
+    if (group && !groups.some((g) => g.code === group.code)) groups.push(group);
+  }
+  return groups.slice(0, GROUP.max);
 }
 
 /** The address bar says this copy runs on the computer it's being worked on: it never sends picks. */
@@ -137,32 +151,37 @@ export function queueUnpick(group, pickId) {
 }
 
 /**
- * Who in the group picked each dish today or yesterday, by this phone's
- * calendar, from a `list` answer {you, members, picks}: Map dishId →
- * [{member, name, today}], newest first, one entry per friend. Your own
- * picks, picks of someone no longer in the group and dishes that aren't
- * starters are left out.
+ * Who in your groups picked each dish today or yesterday, by this phone's
+ * calendar, from the `list` answers {you, members, picks} of every group
+ * (or one of them): Map dishId → [{member, name, today}], newest first, one
+ * entry per friend. Groups make no difference (#33): a friend in two of
+ * your groups is one member id, so they count once, under the name of their
+ * newest pick. Your own picks, picks of someone no longer in that group and
+ * dishes that aren't starters are left out.
  */
-export function friendsPicks(list, now) {
+export function friendsPicks(lists, now) {
   const out = new Map();
-  if (!list || !Array.isArray(list.members) || !Array.isArray(list.picks)) return out;
-  const names = new Map(list.members.map((m) => [m.id, m.name]));
+  const usable = (Array.isArray(lists) ? lists : [lists]).filter((l) => l && Array.isArray(l.members) && Array.isArray(l.picks));
+  const picks = usable.flatMap((list) => {
+    const names = new Map(list.members.map((m) => [m.id, m.name]));
+    return list.picks.filter((p) => p.member !== list.you && names.has(p.member)).map((p) => ({ ...p, name: names.get(p.member) }));
+  });
   const d = new Date(now);
   const today = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const yesterday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1).getTime();
-  for (const pick of [...list.picks].sort((a, b) => b.time - a.time)) {
-    if (pick.member === list.you || !names.has(pick.member) || !STARTER_IDS.has(pick.dishId) || !(pick.time >= yesterday)) continue;
+  for (const pick of picks.sort((a, b) => b.time - a.time)) {
+    if (!STARTER_IDS.has(pick.dishId) || !(pick.time >= yesterday)) continue;
     const who = out.get(pick.dishId) ?? [];
     if (who.some((w) => w.member === pick.member)) continue;
-    who.push({ member: pick.member, name: names.get(pick.member), today: pick.time >= today });
+    who.push({ member: pick.member, name: pick.name, today: pick.time >= today });
     out.set(pick.dishId, who);
   }
   return out;
 }
 
 /** friendsPicks() as counts, for the score: Map dishId → number of friends. */
-export function friendCounts(list, now) {
-  return new Map([...friendsPicks(list, now)].map(([dishId, who]) => [dishId, who.length]));
+export function friendCounts(lists, now) {
+  return new Map([...friendsPicks(lists, now)].map(([dishId, who]) => [dishId, who.length]));
 }
 
 /** "Compartir mis elecciones" turned off: picks not sent yet never will be. Unpicks still go. */
@@ -192,10 +211,11 @@ export async function callGroup(body, fetchImpl = globalThis.fetch) {
   return { ok: response.ok, status: response.status, data };
 }
 
-export const createGroup = (secret, name, fetchImpl) => callGroup({ action: 'create', secret, name }, fetchImpl);
+export const createGroup = (secret, name, groupName, fetchImpl) => callGroup({ action: 'create', secret, name, groupName }, fetchImpl);
 export const joinGroup = (code, secret, name, fetchImpl) => callGroup({ action: 'join', code, secret, name }, fetchImpl);
 export const leaveGroup = (group, fetchImpl) => callGroup({ action: 'leave', code: group.code, secret: group.secret }, fetchImpl);
 export const listGroup = (group, fetchImpl) => callGroup({ action: 'list', code: group.code, secret: group.secret }, fetchImpl);
+export const renameGroup = (group, groupName, fetchImpl) => callGroup({ action: 'rename', code: group.code, secret: group.secret, groupName }, fetchImpl);
 
 /**
  * Sends the queue in order, one call at a time. `getGroup()` returns the
