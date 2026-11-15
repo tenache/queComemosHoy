@@ -3,7 +3,7 @@
 // from (oil for frying counts what the food absorbs, not what's in the pan).
 // A dish the user gave a recipe of their own uses that one instead.
 
-import { STARTER_DISHES } from './dishes.js';
+import { CHANGED_IN_V6, STARTER_DISHES } from './dishes.js';
 
 /** An ingredient line: FOODS key, grams for the whole recipe, label, and grams per unit for countable things. */
 const x = (food, grams, text, each) => (each ? { text, grams, food, each } : { text, grams, food });
@@ -232,6 +232,13 @@ export const STARTER_RECIPES = {
     'Herví los fideos en agua con sal el tiempo que diga el paquete.',
     'Colalos y mezclalos enseguida con la manteca y el queso rallado.',
   ]),
+  'pulled-pork': r(2, [x('cerdo', 500, 'bondiola de cerdo'), x('pan de hamburguesa', 240, 'panes de hamburguesa', 60), x('azucar', 10, 'azúcar'), s('pimentón, comino, sal y pimienta'), s('mostaza, salsa romesco o palta, a elección')], [
+    'Conviene hacer una pieza grande: rinde para todos y lo que sobra se congela.',
+    'Frotá la bondiola con el azúcar, el pimentón, el comino, sal y pimienta.',
+    'Ponela en una fuente con un vaso de agua, tapada con papel de aluminio, y horneá a 150 °C hasta que se deshaga con un tenedor: unas 4 horas una pieza de 1,5 a 2 kg, unas 2 horas y media una de medio kilo (en olla lenta, el doble).',
+    'Desmechala con dos tenedores y mezclala con el jugo de la fuente.',
+    'Tostá los panes y armá los sándwiches con mostaza, salsa romesco o palta, a elección.',
+  ]),
 
   // Sides
   pure: r(2, [x('papa', 500, 'papas', 200), x('leche', 100, 'leche'), x('manteca', 20, 'manteca'), s('sal y nuez moscada')], [
@@ -283,11 +290,13 @@ const STARTER_NAMES = new Map(STARTER_DISHES.map((d) => [d.id, d.name]));
 
 /**
  * The recipe to show for a dish: its own, else the starter recipe if it is
- * still that starter dish (same id and name: a starter the user renamed, say
- * into "Hamburguesas de lentejas", is theirs now), else null.
+ * still that starter dish (same id, and its name or its v5 name, which v6
+ * keeps when the new one was taken: a starter the user renamed, say into
+ * "Hamburguesas de lentejas", is theirs now), else null.
  */
 export function recipeFor(dish) {
   if (!dish) return null;
   if (dish.recipe) return dish.recipe;
-  return STARTER_NAMES.get(dish.id) === dish.name ? (STARTER_RECIPES[dish.id] ?? null) : null;
+  const starter = STARTER_NAMES.get(dish.id) === dish.name || CHANGED_IN_V6[dish.id] === dish.name;
+  return starter ? (STARTER_RECIPES[dish.id] ?? null) : null;
 }

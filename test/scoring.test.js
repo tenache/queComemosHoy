@@ -307,7 +307,7 @@ test('starter dishes: about 30 to 40 mains plus sides, valid, and include the on
     'milanesas de berenjena',
     'pollo al curry con arroz',
     'sopa de pollo',
-    'lentejas',
+    'guiso de lentejas', // "Lentejas" until #30
     'pato a la naranja',
   ];
   for (const name of wanted) assert.ok(names.includes(name), `includes ${name}`);

@@ -275,6 +275,8 @@ test('cuisines: add, rename and remove, with at least one left and no duplicates
   const list = ['Pizza', 'Sushi'];
   assert.deepEqual(addCuisine(list, '  Thai  '), ['Pizza', 'Sushi', 'Thai']);
   assert.equal(addCuisine(list, 'pizza'), null, 'duplicates are refused, ignoring case');
+  assert.equal(addCuisine(['Árabe'], 'arabe'), null, 'and accents');
+  assert.deepEqual(cleanCuisines(['Arabe', 'Árabe']), ['Arabe']);
   assert.equal(addCuisine(list, '   '), null);
   assert.deepEqual(renameCuisine(list, 1, 'Japonesa'), ['Pizza', 'Japonesa']);
   assert.deepEqual(renameCuisine(list, 0, 'PIZZA'), ['PIZZA', 'Sushi'], 'a cuisine can change its own capitals');
@@ -287,7 +289,7 @@ test('cuisines: add, rename and remove, with at least one left and no duplicates
   assert.deepEqual(cleanCuisines([' Pizza ', 'pizza', '', 7, null]), ['Pizza', '7']);
   assert.deepEqual(cleanCuisines([]), DEFAULT_CUISINES);
   assert.deepEqual(cleanCuisines('nope'), DEFAULT_CUISINES);
-  assert.deepEqual(DEFAULT_CUISINES, ['China', 'Mexicana', 'Hamburguesas', 'Pizza', 'Sushi', 'Empanadas']);
+  assert.deepEqual(DEFAULT_CUISINES, ['China', 'Mexicana', 'Hamburguesas', 'Pizza', 'Sushi', 'Empanadas', 'Árabe']);
 });
 
 test('state: v1 data migrates to v2 with the default cuisines and an empty log', () => {
