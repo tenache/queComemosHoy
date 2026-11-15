@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { NEW_IN_V3, NEW_IN_V6, STARTER_DISHES } from '../js/dishes.js';
-import { STARTER_RECIPES } from '../js/recipes.js';
+import { STARTER_RECIPES, recipeFor } from '../js/recipes.js';
 import { SCHEMA_VERSION, defaultState, normalizeState } from '../js/state.js';
 import { DEFAULT_CUISINES } from '../js/wheel.js';
 
@@ -90,6 +90,8 @@ test('migration v5 → v6: a dish the user edited stays as they made it', () => 
   assert.deepEqual(byId(b.dishes, 'milanesas-berenjena').sides, ['ensalada-tomate'], 'sides they chose stay');
   assert.equal(byId(b.dishes, 'lentejas').name, 'Lentejas', 'not renamed onto a name they already use');
   assert.equal(named(b.dishes, 'Guiso de lentejas').length, 1);
+  assert.equal(recipeFor(byId(b.dishes, 'lentejas')), STARTER_RECIPES.lentejas, 'and it keeps its recipe');
+  assert.equal(recipeFor(byId(a.dishes, 'lentejas')), null, 'a renamed starter is theirs: no starter recipe');
 });
 
 test("migration v5 → v6: the user's own dishes with a starter's name are used, not duplicated", () => {
@@ -106,12 +108,20 @@ test("migration v5 → v6: the user's own dishes with a starter's name are used,
   const withTheirs = normalizeState(theirs);
   assert.equal(byId(withTheirs.dishes, 'pulled-pork'), undefined, 'their own pulled pork is the one');
   assert.equal(named(withTheirs.dishes, 'Pulled pork').length, 1);
+
+  // Entries the load throws away (no id, no name) don't count as having it.
+  for (const junk of [{ name: 'Pulled pork' }, { id: 'pulled-pork', name: '  ' }]) {
+    const blob5 = v5Blob();
+    blob5.dishes.push(junk);
+    assert.equal(normalizeState(blob5).dishes.filter((d) => d.id === 'pulled-pork').length, 1, JSON.stringify(junk));
+  }
 });
 
 test('migration v5 → v6: Árabe joins the wheel once', () => {
   const wheel = (cuisines) => normalizeState({ ...v5Blob(), cuisines }).cuisines;
   assert.deepEqual(wheel(['Pizza']), ['Pizza', 'Árabe']);
   assert.deepEqual(wheel(['Pizza', 'árabe']), ['Pizza', 'árabe'], 'already added by hand, in any case');
+  assert.deepEqual(wheel(['Pizza', 'Arabe']), ['Pizza', 'Arabe'], 'or without the accent');
   assert.deepEqual(wheel('nope'), DEFAULT_CUISINES);
 });
 

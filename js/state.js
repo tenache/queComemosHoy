@@ -211,7 +211,8 @@ function migrateToV3(blob) {
  */
 function migrateToV6(blob) {
   const starters = new Map(STARTER_DISHES.map((d) => [d.id, d]));
-  const dishes = blob.dishes.filter((d) => d && typeof d === 'object');
+  // Only the dishes normalizeState keeps: one it drops can't stand in for a starter.
+  const dishes = blob.dishes.filter((d) => d && typeof d === 'object' && d.id != null && String(d.name ?? '').trim());
   const ids = new Set(dishes.map((d) => String(d.id)));
   const names = new Map(dishes.map((d) => [normalizeName(d.name), String(d.id)]));
   // A starter as this user has it: under its id, or their own dish with its name. Undefined if neither.

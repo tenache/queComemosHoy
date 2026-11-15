@@ -275,6 +275,8 @@ test('cuisines: add, rename and remove, with at least one left and no duplicates
   const list = ['Pizza', 'Sushi'];
   assert.deepEqual(addCuisine(list, '  Thai  '), ['Pizza', 'Sushi', 'Thai']);
   assert.equal(addCuisine(list, 'pizza'), null, 'duplicates are refused, ignoring case');
+  assert.equal(addCuisine(['Árabe'], 'arabe'), null, 'and accents');
+  assert.deepEqual(cleanCuisines(['Arabe', 'Árabe']), ['Arabe']);
   assert.equal(addCuisine(list, '   '), null);
   assert.deepEqual(renameCuisine(list, 1, 'Japonesa'), ['Pizza', 'Japonesa']);
   assert.deepEqual(renameCuisine(list, 0, 'PIZZA'), ['PIZZA', 'Sushi'], 'a cuisine can change its own capitals');

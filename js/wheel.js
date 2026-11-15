@@ -161,9 +161,11 @@ export function cleanCuisine(name) {
   return String(name ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_CUISINE_LENGTH);
 }
 
-const sameName = (a, b) => a.toLocaleLowerCase('es') === b.toLocaleLowerCase('es');
+// "Arabe" typed without the accent is "Árabe": case and accents don't count.
+const fold = (name) => name.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es');
+const sameName = (a, b) => fold(a) === fold(b);
 
-/** Trimmed, de-duplicated (ignoring case) list. Falls back to the defaults if nothing is left. */
+/** Trimmed, de-duplicated (ignoring case and accents) list. Falls back to the defaults if nothing is left. */
 export function cleanCuisines(list) {
   const out = [];
   for (const item of Array.isArray(list) ? list : []) {
