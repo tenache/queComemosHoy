@@ -10,6 +10,7 @@ import {
   apiUrl,
   cleanGroup,
   cleanName,
+  cleanSavedName,
   dropQueuedPicks,
   flushQueue,
   formatCode,
@@ -61,6 +62,19 @@ test('cleanGroup: keeps a valid group, drops a broken one', () => {
   assert.equal(cleanGroup(group({ name: '   ' })), null);
   assert.equal(cleanGroup(null), null);
   assert.equal(cleanGroup([]), null);
+});
+
+test('cleanGroup: a name saved before the stricter rule keeps its group (#34)', () => {
+  const zeroWidth = String.fromCharCode(0x200b);
+  for (const name of ['...', '@', '¿?', zeroWidth]) {
+    assert.equal(cleanName(name), '', `a new name like ${JSON.stringify(name)} is refused`);
+    assert.equal(cleanSavedName(name), name);
+    assert.equal(cleanGroup(group({ name }))?.name, name, `but a saved one keeps the group: ${JSON.stringify(name)}`);
+  }
+  assert.equal(cleanGroup(group({ name: '   ' })), null, 'an empty one still does not');
+  const state = defaultState();
+  state.settings.group = group({ name: '...' });
+  assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))).settings.group, group({ name: '...' }));
 });
 
 test('cleanGroup: keeps only well-formed calls in the queue, the newest GROUP.queueMax', () => {

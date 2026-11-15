@@ -375,3 +375,206 @@ test('JSON only: a text/plain POST (which another site could send without a pref
   assert.equal(res.status, 415);
   assert.equal(store.data.size, 0);
 });
+
+// ---- Group names (#33) ------------------------------------------------------
+
+const nameKeysOf = (store, code) => [...store.data.keys()].filter((k) => k.startsWith(`g/${code}/n/`));
+
+test('group name: set at create, seen by whoever joins or lists', async () => {
+  const store = memoryStore();
+  const created = await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: '  Familia  ' });
+  assert.equal(created.status, 200);
+  assert.equal(created.data.groupName, 'Familia');
+  const { code } = created.data;
+  assert.equal((await call(store, { action: 'join', code, secret: NICO, name: 'Nico' })).data.groupName, 'Familia');
+  assert.equal((await call(store, { action: 'list', code, secret: NICO })).data.groupName, 'Familia');
+  assert.equal(nameKeysOf(store, code).length, 1);
+});
+
+test('group name: optional at create (an app from before #33), and any member can set or change it', async () => {
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana'], [NICO, 'Nico']);
+  assert.equal((await call(store, { action: 'list', code, secret: ANA })).data.groupName, null);
+  const renamed = await call(store, { action: 'rename', code, secret: NICO, groupName: 'Los del club' });
+  assert.equal(renamed.status, 200);
+  assert.equal(renamed.data.groupName, 'Los del club');
+  assert.deepEqual(renamed.data.members.map((m) => m.name).sort(), ['Ana', 'Nico'], 'the answer is the group, as list gives it');
+  await call(store, { action: 'rename', code, secret: ANA, groupName: 'Club' });
+  assert.equal((await call(store, { action: 'list', code, secret: NICO })).data.groupName, 'Club');
+  assert.equal(nameKeysOf(store, code).length, 1, 'the older name is deleted');
+});
+
+test('group name: cleaned like names, at most 30 characters; empty or not text is refused', async () => {
+  const store = memoryStore();
+  for (const groupName of ['   ', 5, {}, ['Familia']]) {
+    const res = await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName });
+    assert.equal(res.data.error, 'bad-group-name', JSON.stringify(groupName));
+  }
+  assert.equal(store.data.size, 0, 'nothing is created');
+
+  const { data } = await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: 'Los\u0007 de / la 💞 y un nombre larguísimo' });
+  assert.equal(data.groupName, 'Los de / la 💞 y un nombre larg');
+  assert.ok([...store.data.keys()].every((k) => /^[A-Za-z0-9/_-]+$/.test(k)), [...store.data.keys()].join(' '));
+  // Nothing to see (a zero-width space, punctuation only) is no name.
+  for (const groupName of ['', '  ', null, 7, '\u200b', '\u200b\u2060', '!!!']) {
+    assert.equal((await call(store, { action: 'rename', code: data.code, secret: ANA, groupName })).data.error, 'bad-group-name', JSON.stringify(groupName));
+  }
+  assert.equal((await call(store, { action: 'list', code: data.code, secret: ANA })).data.groupName, data.groupName);
+  assert.equal((await call(store, { action: 'create', secret: NICO, name: '\u200b' })).data.error, 'bad-name', 'the same for people');
+
+  // Characters that turn the invitation around are dropped; emoji keep their joiners.
+  const turned = await call(store, { action: 'rename', code: data.code, secret: ANA, groupName: '\u202eFamilia\u202c 👨‍👩‍👧' });
+  assert.equal(turned.data.groupName, 'Familia 👨‍👩‍👧');
+});
+
+test('rename: only members', async () => {
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana']);
+  const res = await call(store, { action: 'rename', code, secret: LEO, groupName: 'Mío' });
+  assert.equal(res.status, 403);
+  assert.equal(res.data.error, 'not-member');
+  assert.equal(nameKeysOf(store, code).length, 0);
+});
+
+test('rename: the group is never without its name, not even between two writes', async () => {
+  const store = memoryStore();
+  const { data } = await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: 'Familia' });
+  const missing = [];
+  const del = store.delete;
+  store.delete = async (key) => {
+    await del(key);
+    if (nameKeysOf(store, data.code).length === 0) missing.push(key);
+  };
+  await call(store, { action: 'rename', code: data.code, secret: ANA, groupName: 'La familia' }, NOW + 1000);
+  assert.deepEqual(missing, []);
+  assert.equal((await call(store, { action: 'list', code: data.code, secret: ANA })).data.groupName, 'La familia');
+});
+
+test('rename at the same moment: one name wins everywhere, also in both answers, and the clean-up keeps only it', async () => {
+  const store = memoryStore();
+  const { data } = await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: 'Familia' });
+  await call(store, { action: 'join', code: data.code, secret: NICO, name: 'Nico' });
+  // Both renames read the group before either writes: each deletes only "Familia", so two names are left.
+  const list = store.list;
+  let reads = 0;
+  let bothRead;
+  const gate = new Promise((resolve) => (bothRead = resolve));
+  store.list = async (options) => {
+    const res = await list(options);
+    if (++reads <= 2) {
+      if (reads === 2) bothRead();
+      await gate;
+    }
+    return res;
+  };
+  const answers = await Promise.all([
+    call(store, { action: 'rename', code: data.code, secret: ANA, groupName: 'Uno' }, NOW + 1000),
+    call(store, { action: 'rename', code: data.code, secret: NICO, groupName: 'Dos' }, NOW + 1000),
+  ]);
+  assert.equal(nameKeysOf(store, data.code).length, 2, 'the race happened');
+  const ana = (await call(store, { action: 'list', code: data.code, secret: ANA }, NOW + 2000)).data.groupName;
+  const nico = (await call(store, { action: 'list', code: data.code, secret: NICO }, NOW + 2000)).data.groupName;
+  assert.ok(['Uno', 'Dos'].includes(ana), ana);
+  assert.equal(nico, ana, 'both see the same name');
+  assert.deepEqual(answers.map((a) => a.data.groupName), [ana, ana], 'the loser is told the name that won');
+  await prune(store, NOW + 3000);
+  assert.equal(nameKeysOf(store, data.code).length, 1);
+  assert.equal((await call(store, { action: 'list', code: data.code, secret: NICO }, NOW + 4000)).data.groupName, ana);
+});
+
+test('group name: the same time, then the key decides, the same way for everyone', async () => {
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana']);
+  const key = (name) => `g/${code}/n/${NOW}/${Buffer.from(name).toString('base64url')}`;
+  // Stored "Uno" first: the key that sorts last ("VW5v" after "RG9z") wins, not the order they came in.
+  await store.set(key('Uno'), '1');
+  await store.set(key('Dos'), '1');
+  assert.equal((await call(store, { action: 'list', code, secret: ANA })).data.groupName, 'Uno');
+});
+
+test('rename to the name it already has still clears a second name left by a race', async () => {
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana']);
+  const key = (time, name) => `g/${code}/n/${time}/${Buffer.from(name).toString('base64url')}`;
+  await store.set(key(NOW, 'Vieja'), '1');
+  await store.set(key(NOW + 1, 'Nueva'), '1');
+  await call(store, { action: 'rename', code, secret: ANA, groupName: 'Nueva' }, NOW + 2);
+  assert.equal(nameKeysOf(store, code).length, 1);
+  assert.equal((await call(store, { action: 'list', code, secret: ANA })).data.groupName, 'Nueva');
+});
+
+test('rename on a server whose clock is behind the name it replaces: the new name still wins', async () => {
+  const store = memoryStore();
+  const { data } = await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: 'Familia' }, NOW + 50);
+  // A prune in the middle of the rename must keep the new name, not the old one.
+  const set = store.set;
+  store.set = async (k, v) => {
+    await set(k, v);
+    if (k.includes('/n/')) await prune(store, NOW, [data.code]);
+  };
+  await call(store, { action: 'rename', code: data.code, secret: ANA, groupName: 'La familia' }, NOW);
+  assert.equal(nameKeysOf(store, data.code).length, 1);
+  assert.equal((await call(store, { action: 'list', code: data.code, secret: ANA })).data.groupName, 'La familia');
+});
+
+test('create: you are written before the name, so a clean-up at that moment keeps it', async () => {
+  const store = memoryStore();
+  const set = store.set;
+  let pruned = false;
+  store.set = async (k, v) => {
+    await set(k, v);
+    if (!pruned) {
+      pruned = true;
+      await prune(store, NOW);
+    }
+  };
+  const { data } = await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: 'Familia' });
+  assert.equal((await call(store, { action: 'list', code: data.code, secret: ANA })).data.groupName, 'Familia');
+});
+
+test('create: if the name cannot be written, nothing of the group is left for a retry to leave behind', async () => {
+  const store = memoryStore();
+  const set = store.set;
+  store.set = async (k, v) => {
+    if (k.includes('/n/')) throw new Error('store down');
+    return set(k, v);
+  };
+  const res = await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: 'Familia' });
+  assert.equal(res.status, 503);
+  assert.equal(res.data.error, 'try-again');
+  assert.equal(store.data.size, 0);
+});
+
+test('group name: the newest wins, by time', async () => {
+  const store = memoryStore();
+  const code = await groupOf(store, [ANA, 'Ana']);
+  const key = (time, name) => `g/${code}/n/${time}/${Buffer.from(name).toString('base64url')}`;
+  // Two names left by a race. Compared as numbers, not as text: "100000" sorts before "99999".
+  await store.set(key(99999, 'Vieja'), '1');
+  await store.set(key(100000, 'Nueva'), '1');
+  assert.equal((await call(store, { action: 'list', code, secret: ANA })).data.groupName, 'Nueva');
+  await prune(store, NOW);
+  assert.deepEqual(nameKeysOf(store, code), [key(100000, 'Nueva')]);
+});
+
+test("leave: the group's name stays while anyone is in it, and goes with the last one", async () => {
+  const store = memoryStore();
+  const { data } = await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: 'Familia' });
+  await call(store, { action: 'join', code: data.code, secret: NICO, name: 'Nico' });
+  await call(store, { action: 'leave', code: data.code, secret: ANA });
+  assert.equal((await call(store, { action: 'list', code: data.code, secret: NICO })).data.groupName, 'Familia');
+  await call(store, { action: 'leave', code: data.code, secret: NICO });
+  assert.equal(store.data.size, 0, 'nothing of the group is left');
+});
+
+test("prune: a group nobody is in loses its name, also when its last member was inactive", async () => {
+  const store = memoryStore();
+  // A name left without a group (the last two leaving at the same moment).
+  await store.set(`g/ABCD2345/n/${NOW}/${Buffer.from('Sola').toString('base64url')}`, '1');
+  const { data } = await call(store, { action: 'create', secret: ANA, name: 'Ana', groupName: 'Familia' });
+  await prune(store, NOW + 1000);
+  assert.equal(nameKeysOf(store, 'ABCD2345').length, 0);
+  assert.equal(nameKeysOf(store, data.code).length, 1, 'a group with a member keeps its name');
+  await prune(store, NOW + (LIMITS.inactiveDays + 2) * DAY);
+  assert.equal(store.data.size, 0, 'an inactive last member takes the name along');
+});
