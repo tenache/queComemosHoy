@@ -1191,6 +1191,14 @@ function viewSettings() {
 let flushing = null; // the run of flushGroup() under way, if any
 const leaving = new Set(); // codes of the groups being left: nothing more is sent to them or fetched
 
+/** Saves the state, unless this copy is read-only (a newer copy of the app saved over it). */
+function saveGroups() {
+  if (!ui.readOnly) saveState(state);
+}
+
+/** A group as the state has it now: another tab or an import may have replaced the objects held across a call. */
+const groupByCode = (code) => state.settings.groups.find((g) => g.code === code);
+
 /** Sends the picks waiting in each group's queue, one group after another. Safe to call often: one run at a time. */
 function flushGroup() {
   const waiting = () => state.settings.groups.filter((g) => g.queue.length > 0 && !leaving.has(g.code));
@@ -1199,7 +1207,7 @@ function flushGroup() {
     const results = [];
     for (const { code } of waiting()) {
       // The group as the state has it now, which another tab or an import may have replaced.
-      results.push([code, await flushQueue(() => state.settings.groups.find((g) => g.code === code), () => saveState(state))]);
+      results.push([code, await flushQueue(() => groupByCode(code), saveGroups)]);
     }
     return results;
   })().finally(() => {
@@ -1231,8 +1239,8 @@ const groupLabel = (group) => group.groupName ?? t('groupUnnamed', { code: forma
 
 /** This phone is out of a group (it left, or the server says it isn't in it: `gone`): forget it and its list. */
 function leftGroup(code, gone = false) {
-  const group = state.settings.groups.find((g) => g.code === code);
-  if (!group) return;
+  const group = groupByCode(code);
+  if (!group) return render(); // already gone (another tab, or a "gone" answer first): just redraw
   state.settings.groups = state.settings.groups.filter((g) => g !== group);
   ui.groupLists.delete(code);
   saveGroupLists();
@@ -1259,6 +1267,8 @@ function readCachedGroupLists() {
 }
 
 function saveGroupLists() {
+  // Only the groups this phone is in: a list of one left in another tab is not written back.
+  for (const code of ui.groupLists.keys()) if (!groupByCode(code)) ui.groupLists.delete(code);
   try {
     localStorage.setItem(GROUP_LISTS_KEY, JSON.stringify(Object.fromEntries(ui.groupLists)));
     localStorage.removeItem(OLD_GROUP_LIST_KEY);
@@ -1318,7 +1328,7 @@ function setGroupList(group, data) {
   saveGroupLists();
   if (data.groupName !== undefined && group.groupName !== groupName) {
     group.groupName = groupName;
-    saveState(state);
+    saveGroups();
   }
 }
 
@@ -1376,6 +1386,8 @@ async function groupCall(call, onOk, errorFor = null) {
   const res = await call;
   form.busy = false;
   if (res.ok) onOk(res.data);
+  // The server says this phone isn't in that group any more: drop it, with a banner, instead of "try again".
+  else if (errorFor && errorFor !== 'me' && res.status === 403 && res.data?.error === 'not-member') return leftGroup(errorFor, true);
   else form.error = groupError(res);
   commit();
 }
@@ -1384,15 +1396,17 @@ async function groupCall(call, onOk, errorFor = null) {
 function enterGroup(create) {
   const form = ui.groupForm;
   const groups = state.settings.groups;
-  const name = groups[0]?.name ?? cleanName(form.name);
+  // Your name, the same in every group. One saved before the stricter rule (#34), like "...",
+  // is refused by the server: it has to be changed first, in "Tu nombre".
+  const name = cleanName(groups.length > 0 ? groups[0].name : form.name);
   const groupName = cleanName(form.groupName);
   const code = create ? null : normalizeCode(form.code);
-  form.errorFor = null;
+  form.errorFor = groups.length > 0 && !name ? 'me' : null;
   form.error =
     groups.length >= GROUP.max
       ? t('groupMaxReached', { n: GROUP.max })
       : !name
-        ? t('groupNameMissing')
+        ? t(groups.length > 0 ? 'groupNameFixFirst' : 'groupNameMissing')
         : create && !groupName
           ? t('groupNameMissingGroup')
           : !create && !code
@@ -1405,7 +1419,15 @@ function enterGroup(create) {
   // the same member (the server then just renames), not a second one: the form keeps it until then.
   const secret = groups[0]?.secret ?? (form.secret ??= newSecret());
   groupCall(create ? createGroup(secret, name, groupName) : joinGroup(code, secret, name), (data) => {
-    if (state.settings.groups.some((g) => g.code === data.code)) return; // two taps: already in
+    if (groupByCode(data.code)) return; // two taps: already in
+    // Another tab added a group meanwhile (the cap reached, or a first group with another
+    // secret), or this copy turned read-only: it can't be kept, so out of it again.
+    const first = state.settings.groups[0];
+    if (ui.readOnly || state.settings.groups.length >= GROUP.max || (first && first.secret !== secret)) {
+      leaveGroup({ code: data.code, secret });
+      ui.groupForm.error = state.settings.groups.length >= GROUP.max ? t('groupMaxReached', { n: GROUP.max }) : t('groupError');
+      return;
+    }
     const group = { code: data.code, secret, name, groupName: null, sharing: true, queue: [] };
     state.settings.groups.push(group);
     setGroupList(group, data);
@@ -1414,11 +1436,15 @@ function enterGroup(create) {
   });
 }
 
-/** A new name for you, in every group: joining again with the same secret renames you. */
+/**
+ * A new name for you, in every group: joining again with the same secret
+ * renames you. A group where it fails keeps your old name, and the error,
+ * under "Tu nombre", says which; "Cambiar" again tries them all.
+ */
 async function renameMe() {
   const form = ui.groupForm;
   const name = cleanName(form.name);
-  form.errorFor = null;
+  form.errorFor = 'me';
   if (!name) {
     form.error = t('groupNameMissing');
     return render();
@@ -1426,17 +1452,30 @@ async function renameMe() {
   form.busy = true;
   form.error = null;
   render();
-  let failed = null;
-  for (const group of [...state.settings.groups]) {
-    const res = await joinGroup(group.code, group.secret, name);
-    if (!res.ok) failed ??= res;
-    else if (state.settings.groups.includes(group)) {
-      group.name = name;
-      setGroupList(group, res.data);
+  const failed = [];
+  let offline = false;
+  for (const { code } of [...state.settings.groups]) {
+    // Each group as the state has it now: one left meanwhile (here or in another tab) is skipped,
+    // or the join would put you back in it.
+    const group = groupByCode(code);
+    if (!group || leaving.has(code)) continue;
+    const res = await joinGroup(code, group.secret, name);
+    const now = groupByCode(code);
+    if (res.ok && now) {
+      now.name = name;
+      setGroupList(now, res.data);
+    } else if (res.ok) {
+      leaveGroup({ code, secret: group.secret }); // left while the join was out: out of it again
+    } else if (res.status === 404 && res.data?.error === 'no-group') {
+      leftGroup(code, true); // nobody is in it any more
+    } else {
+      failed.push(groupLabel(now ?? group));
+      offline ||= res.status === 0;
     }
   }
   ui.groupForm.busy = false;
-  if (failed) ui.groupForm.error = groupError(failed);
+  ui.groupForm.errorFor = 'me';
+  if (failed.length > 0) ui.groupForm.error = t(offline ? 'groupRenameFailedOffline' : 'groupRenameFailed', { groups: failed.join(', ') });
   else ui.groupForm.name = '';
   commit();
 }
@@ -1453,7 +1492,8 @@ function renameTheGroup(group) {
   groupCall(
     renameGroup(group, groupName),
     (data) => {
-      if (state.settings.groups.includes(group)) setGroupList(group, data);
+      const now = groupByCode(group.code);
+      if (now) setGroupList(now, data);
       delete ui.groupForm.rename[group.code];
     },
     group.code,
@@ -1461,26 +1501,28 @@ function renameTheGroup(group) {
 }
 
 async function leaveTheGroup(group) {
+  const { code } = group;
   if (!window.confirm(t('groupLeaveConfirm', { name: groupLabel(group) }))) return;
   ui.groupForm.busy = true;
   ui.groupForm.error = null;
   render();
   // Nothing more goes out to this group. A pick on its way lands before the leave deletes it,
   // and a list on its way can't mark you "seen today" (a new key) after the leave.
-  leaving.add(group.code);
+  leaving.add(code);
   const unpicks = group.queue.filter((o) => o.op === 'unpick');
   group.queue = [];
-  saveState(state);
+  saveGroups();
   await flushing;
   await listing;
   const res = await leaveGroup(group);
-  leaving.delete(group.code);
+  leaving.delete(code);
   ui.groupForm.busy = false;
   // Not in it on the server either: nothing left there to delete.
-  if (res.ok || (res.status === 403 && res.data?.error === 'not-member')) return leftGroup(group.code);
+  if (res.ok || (res.status === 403 && res.data?.error === 'not-member')) return leftGroup(code);
   // Still in the group: picks already taken back with "Deshacer" must still go.
-  group.queue = [...unpicks, ...group.queue];
-  ui.groupForm.errorFor = group.code;
+  const now = groupByCode(code);
+  if (now) now.queue = [...unpicks, ...now.queue];
+  ui.groupForm.errorFor = code;
   ui.groupForm.error = res.status === 0 ? t('groupOfflineLeave') : t('groupError');
   commit();
   flushGroup();
@@ -1529,7 +1571,8 @@ function groupBox(group) {
   const box = h(
     'details',
     { class: 'fold group', open: ui.openGroups.has(group.code) },
-    h('summary', null, label, !group.sharing && h('span', { class: 'badge inline' }, t('groupPaused'))),
+    // The comma is for screen readers, which would otherwise read "Cluben pausa".
+    h('summary', null, label, !group.sharing && [h('span', { class: 'sr-only' }, ', '), h('span', { class: 'badge inline' }, t('groupPaused'))]),
     h(
       'div',
       { class: 'fold-body' },
@@ -1600,6 +1643,7 @@ function groupSection() {
           button(t('groupSaveName'), renameMe, '', { disabled: busy }),
         ),
       ),
+    me && groupErrorLine('me'),
     groups.length > 0 && h('div', { class: 'groups' }, groups.map(groupBox)),
     groups.length >= GROUP.max
       ? h('p', { class: 'help' }, t('groupMaxReached', { n: GROUP.max }))
