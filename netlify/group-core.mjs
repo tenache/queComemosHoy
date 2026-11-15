@@ -4,6 +4,7 @@
 //
 //   g/<code>/m/<memberId>/<seen>/<name, base64url>   a member, last seen on day <seen> (YYYYMMDD, UTC)
 //   g/<code>/p/<memberId>/<pickId>/<dishId>/<time>   a pick
+//   g/<code>/n/<time>/<name, base64url>              the group's name, set at <time> (#33)
 //
 // memberId is a hash of the phone's secret, so the group sees ids and names
 // but never secrets. Picks older than LIMITS.keepDays, picks of people no
@@ -30,6 +31,7 @@ const SECRET_RE = /^[0-9a-f]{32}$/;
 const PICK_ID_RE = /^[0-9a-z]{6,24}$/;
 const DISH_ID_RE = /^[a-z0-9-]{1,40}$/;
 const DAY_RE = /^\d{8}$/;
+const TIME_RE = /^\d{1,16}$/;
 
 export const memberIdOf = (secret) => createHash('sha256').update(secret).digest('hex').slice(0, 16);
 
@@ -56,11 +58,14 @@ async function keys(store, prefix) {
  * Parses a group's keys. A member can briefly have two keys (a new name or
  * a new day is written before the old key is deleted): `members` has one
  * entry per member, the most recently seen, and `memberKeys` all of them.
+ * The group's name works the same way: `nameKeys` oldest first, and
+ * `groupName` the newest (null for a group made before #33).
  */
 function parseGroup(list) {
   const members = new Map();
   const memberKeys = [];
   const picks = [];
+  const nameKeys = [];
   for (const key of list) {
     const [, , kind, member, ...rest] = key.split('/');
     if (kind === 'm' && rest.length === 2 && DAY_RE.test(rest[0])) {
@@ -72,19 +77,23 @@ function parseGroup(list) {
     } else if (kind === 'p' && rest.length === 3) {
       const [pickId, dishId, time] = rest;
       picks.push({ member, pickId, dishId, time: Number(time), key });
+    } else if (kind === 'n' && rest.length === 1 && TIME_RE.test(member)) {
+      nameKeys.push({ time: Number(member), name: Buffer.from(rest[0], 'base64url').toString(), key });
     }
   }
-  return { members: [...members.values()], memberKeys, picks };
+  nameKeys.sort((a, b) => a.time - b.time || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  return { members: [...members.values()], memberKeys, picks, nameKeys, groupName: nameKeys.at(-1)?.name ?? null };
 }
 
 const readGroup = async (store, code) => parseGroup(await keys(store, `g/${code}/`));
 
-/** What a member sees: names, and the recent picks of people still in the group. No keys, no secrets. */
+/** What a member sees: the group's name, names, and the recent picks of people still in the group. No keys, no secrets. */
 function view(group, you, now) {
   const since = now - LIMITS.keepDays * DAY_MS;
   const ids = new Set(group.members.map((m) => m.id));
   return {
     you,
+    groupName: group.groupName,
     members: group.members.map(({ id, name }) => ({ id, name })),
     picks: group.picks.filter((p) => p.time >= since && ids.has(p.member)).map(({ member, dishId, time }) => ({ member, dishId, time })),
   };
@@ -109,6 +118,15 @@ async function writeMember(store, code, group, you, name, now) {
   group.memberKeys = [...group.memberKeys.filter((m) => m.id !== you), { id: you, key }];
 }
 
+/** Writes the group's name, and only then deletes the older ones: the group is never without one. */
+async function writeGroupName(store, code, group, groupName, now) {
+  const key = `g/${code}/n/${Math.floor(now)}/${Buffer.from(groupName).toString('base64url')}`;
+  await store.set(key, '1');
+  await deleteAll(store, group.nameKeys.map((n) => n.key).filter((k) => k !== key));
+  group.nameKeys = [{ time: Math.floor(now), name: groupName, key }];
+  group.groupName = groupName;
+}
+
 /** Marks you as seen today (once a day), so prune() keeps you. */
 async function touch(store, code, group, you, now) {
   const me = group.members.find((m) => m.id === you);
@@ -117,9 +135,10 @@ async function touch(store, code, group, you, now) {
 
 /**
  * Deletes what nobody should see any more: picks older than keepDays,
- * picks of people no longer in their group, and members not seen for
- * inactiveDays (with their picks). `codes` limits it to some groups;
- * without it, it goes through the whole store (the daily run).
+ * picks of people no longer in their group, members not seen for
+ * inactiveDays (with their picks), a group's older names, and the name of a
+ * group nobody is in. `codes` limits it to some groups; without it, it goes
+ * through the whole store (the hourly run).
  */
 export async function prune(store, now = Date.now(), codes = null) {
   const byCode = new Map();
@@ -139,23 +158,31 @@ export async function prune(store, now = Date.now(), codes = null) {
     const active = new Set(group.members.filter((m) => !inactive.has(m.id)).map((m) => m.id));
     gone.push(...group.memberKeys.filter((m) => inactive.has(m.id)).map((m) => m.key));
     gone.push(...group.picks.filter((p) => p.time < since || !active.has(p.member)).map((p) => p.key));
+    // Two renames at once can leave two names: the newest is the name. Nobody left: no name either.
+    gone.push(...(active.size === 0 ? group.nameKeys : group.nameKeys.slice(0, -1)).map((n) => n.key));
   }
   await deleteAll(store, gone);
   return gone.length;
 }
 
 const isText = (value, re) => typeof value === 'string' && re.test(value);
+/** A group's name, cleaned like a person's; '' when there's none to use (empty, or not text). */
+const cleanGroupName = (value) => (typeof value === 'string' ? cleanName(value) : '');
 
 const ACTIONS = {
   async create(store, body, now) {
     const name = cleanName(body.name);
     if (!name) return fail(400, 'bad-name');
+    // Optional, so an app from before #33 can still create a group (without a name).
+    const groupName = body.groupName == null ? null : cleanGroupName(body.groupName);
+    if (groupName === '') return fail(400, 'bad-group-name');
     const you = memberIdOf(body.secret);
     for (let attempt = 0; attempt < 5; attempt++) {
       const code = newCode();
       if ((await keys(store, `g/${code}/`)).length > 0) continue;
       const group = parseGroup([]);
       await writeMember(store, code, group, you, name, now);
+      if (groupName) await writeGroupName(store, code, group, groupName, now);
       return json(200, { code, ...view(group, you, now) });
     }
     return fail(503, 'try-again');
@@ -183,8 +210,17 @@ const ACTIONS = {
 
   async leave(store, body, now, code, group, you) {
     const mine = [...group.memberKeys.filter((m) => m.id === you), ...group.picks.filter((p) => p.member === you)];
-    await deleteAll(store, mine.map((x) => x.key));
+    // The last one to leave takes the group's name too (prune() catches any left by a race).
+    const last = group.members.every((m) => m.id === you);
+    await deleteAll(store, [...mine, ...(last ? group.nameKeys : [])].map((x) => x.key));
     return json(200, { ok: true });
+  },
+
+  async rename(store, body, now, code, group, you) {
+    const groupName = cleanGroupName(body.groupName);
+    if (!groupName) return fail(400, 'bad-group-name');
+    if (groupName !== group.groupName || group.nameKeys.length > 1) await writeGroupName(store, code, group, groupName, now);
+    return json(200, view(group, you, now));
   },
 
   async list(store, body, now, code, group, you) {
@@ -225,7 +261,7 @@ const ACTIONS = {
 };
 
 // Actions that need you to be in the group already.
-const MEMBER_ONLY = new Set(['leave', 'list', 'pick', 'unpick']);
+const MEMBER_ONLY = new Set(['leave', 'list', 'pick', 'unpick', 'rename']);
 
 // The app is published by GitHub Pages and calls this function from there
 // (#26): only that origin gets CORS headers, so no other site's page can use it.
