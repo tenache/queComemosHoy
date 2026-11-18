@@ -378,7 +378,7 @@ export const STARTER_RECIPES = {
     'En una fuente, armá capas: papas, berenjenas, carne y berenjenas. Cubrí con la bechamel y el queso.',
     'Horneá a 180 °C unos 40 minutos, hasta que esté dorada. Dejá reposar 15 minutos antes de cortar.',
   ]),
-  souvlaki: r(2, [x('cerdo', 400, 'cerdo (bondiola o carré, en cubos)'), x('pan de pita', 120, 'pitas', 60), x('yogur', 200, 'yogur griego (o natural bien escurrido)'), x('pepino', 100, 'pepino'), x('tomate', 120, 'tomate', 120), x('cebolla', 50, 'cebolla morada'), x('aceite', 20, 'aceite de oliva'), s('limón, ajo, orégano y sal')], [
+  souvlaki: r(2, [x('cerdo', 400, 'cerdo (bondiola o carré, en cubos)'), x('pan de pita', 120, 'pitas', 60), x('yogur griego', 200, 'yogur griego (o natural bien escurrido)'), x('pepino', 100, 'pepino'), x('tomate', 120, 'tomate', 120), x('cebolla', 50, 'cebolla morada'), x('aceite', 20, 'aceite de oliva'), s('limón, ajo, orégano y sal')], [
     'Mariná el cerdo con aceite, jugo de limón, ajo, orégano y sal, al menos 30 minutos.',
     'Para el tzatziki, rallá el pepino, escurrilo apretándolo y mezclalo con el yogur, ajo rallado y sal.',
     'Ensartá la carne en brochetas (si son de madera, remojalas antes 20 minutos) y hacela en plancha o parrilla bien caliente, 10 a 12 minutos, dándola vuelta.',
@@ -396,7 +396,7 @@ export const STARTER_RECIPES = {
     'Rellená las verduras hasta tres cuartos (el arroz crece), tapalas y acomodalas en una fuente con la papa en gajos alrededor.',
     'Rociá con el resto del aceite y horneá a 180 °C una hora y cuarto, hasta que el arroz esté tierno.',
   ]),
-  'albondigas-griegas': r(2, [x('carne picada', 300, 'carne picada'), x('pan', 60, 'miga de pan remojada en leche'), x('cebolla', 75, 'cebolla rallada'), x('huevo', 50, 'huevo', 50), x('harina', 20, 'harina (para pasarlas)'), x('aceite', 30, FRY), x('yogur', 200, 'yogur griego (o natural bien escurrido)'), x('pepino', 100, 'pepino'), s('menta, orégano, ajo y sal')], [
+  'albondigas-griegas': r(2, [x('carne picada', 300, 'carne picada'), x('pan', 60, 'miga de pan remojada en leche'), x('cebolla', 75, 'cebolla rallada'), x('huevo', 50, 'huevo', 50), x('harina', 20, 'harina (para pasarlas)'), x('aceite', 30, FRY), x('yogur griego', 200, 'yogur griego (o natural bien escurrido)'), x('pepino', 100, 'pepino'), s('menta, orégano, ajo y sal')], [
     'Mezclá la carne con la miga escurrida, la cebolla, el huevo, la menta y el orégano picados y sal. Dejá descansar 15 minutos.',
     'Formá albóndigas chicas, pasalas por harina y freílas en tandas hasta dorar, 6 a 8 minutos.',
     'Para el tzatziki, rallá el pepino, escurrilo apretándolo y mezclalo con el yogur, ajo y sal.',
@@ -453,7 +453,7 @@ export const STARTER_RECIPES = {
     'Enfriá todo y armá la ensalada con los tomates en gajos, las aceitunas, el atún, los huevos en cuartos y las anchoas.',
     'Condimentá con el aceite batido con una cucharadita de mostaza, vinagre y sal.',
   ]),
-  'dorada-horno': r(2, [x('dorada', 800, 'doradas enteras (o lubinas), limpias'), x('papa', 400, 'papas', 200), x('cebolla', 150, 'cebolla', 150), x('vino', 100, 'vino blanco'), x('aceite', 40, 'aceite de oliva'), s('limón, ajo, perejil y sal')], [
+  'dorada-horno': r(2, [x('dorada', 800, 'doradas enteras (o lubinas), limpias', 400), x('papa', 400, 'papas', 200), x('cebolla', 150, 'cebolla', 150), x('vino', 100, 'vino blanco'), x('aceite', 40, 'aceite de oliva'), s('limón, ajo, perejil y sal')], [
     'Cortá las papas y la cebolla en rodajas finas, salalas, ponelas en una fuente con la mitad del aceite y horneá a 200 °C 25 minutos.',
     'Salá los pescados por dentro y por fuera, poneles rodajas de limón en la panza y haceles dos cortes en el lomo.',
     'Ponelos sobre las papas, rociá con el vino y el resto del aceite, y horneá 15 a 20 minutos más, hasta que la carne se separe de la espina.',
@@ -465,27 +465,28 @@ export const STARTER_RECIPES = {
     'En la misma olla, rehogá la cebolla y el ajo picados en el aceite, sumá el pimentón, el tomate y medio vaso del caldo colado, y cociná 10 minutos.',
     'Volvé a poner los mejillones, mezclá un minuto y serví con perejil y pan para mojar.',
   ]),
-  'pollo-ajillo': r(2, [x('pollo', 500, 'pollo (patas muslo en trozos chicos, con hueso)'), x('ajo', 40, 'dientes de ajo (una cabeza)', 5), x('vino', 100, 'vino blanco'), x('aceite', 30, 'aceite de oliva'), s('laurel, perejil y sal')], [
+  'pollo-ajillo': r(2, [x('pollo', 500, 'pollo (patas muslo en trozos chicos, con hueso)'), x('ajo', 40, 'dientes de ajo', 5), x('vino', 100, 'vino blanco'), x('aceite', 30, 'aceite de oliva'), s('laurel, perejil y sal')], [
     'Salá el pollo y doralo bien en el aceite, a fuego medio, unos 15 minutos, dándolo vuelta.',
     'Sumá los ajos pelados y apenas aplastados y el laurel, y cociná 5 minutos sin que se quemen.',
-    'Echá el vino, tapá y cociná 15 minutos a fuego bajo, hasta que el pollo esté hecho y la salsa reducida.',
+    'Echá el vino y dejá que hierva 2 minutos. Tapá y cociná 10 minutos a fuego bajo; destapá y cociná 5 más, hasta que el pollo esté hecho (sin rosado junto al hueso) y la salsa se reduzca.',
     'Terminá con perejil picado.',
   ]),
-  'shawarma-pollo': r(2, [x('pechuga', 500, 'pechuga o muslo de pollo, sin piel'), x('pan de pita', 120, 'pitas', 60), x('yogur', 150, 'yogur natural'), x('tahini', 20, 'tahini'), x('cebolla', 150, 'cebolla morada', 150), x('tomate', 120, 'tomate', 120), x('aceite', 20, 'aceite de oliva'), s('limón, ajo, comino, pimentón, canela y sal')], [
+  'shawarma-pollo': r(2, [x('pechuga', 400, 'pechuga o muslo de pollo, sin piel'), x('pan de pita', 120, 'pitas', 60), x('yogur', 150, 'yogur natural'), x('tahini', 20, 'tahini'), x('cebolla', 150, 'cebolla morada', 150), x('tomate', 120, 'tomate', 120), x('aceite', 20, 'aceite de oliva'), s('limón, ajo, comino, pimentón, canela y sal')], [
     'Cortá el pollo en tiras y marinalo con la mitad del yogur, el aceite, jugo de limón, ajo y las especias, al menos 30 minutos.',
     'Extendelo en una placa con la cebolla en gajos y horneá a 220 °C 20 a 25 minutos, hasta que se dore en los bordes.',
     'Para la salsa, mezclá el resto del yogur con el tahini, jugo de limón y sal.',
     'Calentá las pitas y rellenalas con el pollo, la cebolla, el tomate y la salsa.',
   ]),
-  canelones: r(4, [x('fideos', 160, 'placas de canelones (16)'), x('carne picada', 400, 'carne picada (de cerdo y de vaca)'), x('cebolla', 150, 'cebolla', 150), x('tomate triturado', 100, 'tomate triturado'), x('leche', 700, 'leche'), x('harina', 60, 'harina'), x('manteca', 60, 'manteca'), x('queso rallado', 40, 'queso rallado'), x('vino', 50, 'vino blanco'), x('aceite', 20, 'aceite de oliva'), s('nuez moscada y sal')], [
+  canelones: r(4, [x('fideos', 100, 'placas de canelones', 6.25), x('carne picada', 400, 'carne picada (de cerdo y de vaca)'), x('cebolla', 150, 'cebolla', 150), x('tomate triturado', 100, 'tomate triturado'), x('leche', 700, 'leche'), x('harina', 60, 'harina'), x('manteca', 60, 'manteca'), x('queso rallado', 40, 'queso rallado'), x('vino', 50, 'vino blanco'), x('aceite', 20, 'aceite de oliva'), s('nuez moscada y sal')], [
     'Rehogá la cebolla picada en el aceite 10 minutos, sumá la carne y dorala bien. Agregá el tomate y el vino y cociná 15 minutos. Dejá enfriar.',
     'Herví las placas en abundante agua con sal lo que diga el paquete (o hidratalas en agua caliente si son precocidas) y secalas sobre un repasador.',
     'Para la bechamel, derretí la manteca, sumá la harina y, de a poco, la leche, revolviendo hasta que espese. Nuez moscada y sal. Mezclá un cucharón con el relleno.',
     'Poné relleno en cada placa, enrollala y acomodalas en una fuente. Cubrí con el resto de la bechamel y el queso.',
     'Gratiná en horno fuerte 15 a 20 minutos.',
   ]),
-  'arroz-horno': r(2, [x('arroz', 120, 'arroz redondo'), x('cerdo', 150, 'cerdo (costillas en trozos)'), x('chorizo', 60, 'morcilla (o chorizo)'), x('garbanzos', 100, 'garbanzos cocidos'), x('papa', 200, 'papa', 200), x('tomate', 120, 'tomate', 120), x('caldo', 400, 'caldo'), x('aceite', 30, 'aceite de oliva'), s('una cabeza de ajo, pimentón, azafrán y sal')], [
-    'En una cazuela que vaya al horno, dorá en el aceite las costillas, la morcilla y la papa en rodajas gruesas, y sacalas.',
+  'arroz-horno': r(2, [x('arroz', 120, 'arroz redondo'), x('cerdo', 150, 'cerdo (costillas en trozos)'), x('chorizo', 60, 'morcilla (o chorizo)'), x('garbanzos', 100, 'garbanzos cocidos'), x('papa', 200, 'papa', 200), x('tomate', 120, 'tomate rallado', 120), x('caldo', 300, 'caldo'), x('aceite', 30, 'aceite de oliva'), s('una cabeza de ajo, pimentón, azafrán y sal')], [
+    'Prendé el horno a 220 °C. Usá una cazuela ancha de barro (o una fuente) que vaya al horno: el arroz tiene que quedar en una capa fina.',
+    'En esa cazuela, dorá en el aceite las costillas, la morcilla y la papa en rodajas gruesas, y sacalas.',
     'En el mismo aceite, rehogá el tomate rallado con el pimentón y sumá el arroz y los garbanzos.',
     'Echá el caldo hirviendo con el azafrán y sal, y acomodá arriba la carne, la morcilla, las papas y la cabeza de ajo en el centro.',
     'Horneá a 220 °C unos 20 minutos, hasta que el arroz esté hecho y seco. Dejá reposar 5 minutos.',
@@ -496,11 +497,11 @@ export const STARTER_RECIPES = {
     'Sumá las albóndigas a la salsa, tapá y cociná 15 minutos a fuego bajo.',
     'Hacé un hueco por huevo, rompé uno en cada hueco, tapá y cociná 5 a 7 minutos, con la yema blanda. Terminá con cilantro y serví con pan.',
   ]),
-  'gigantes-horno': r(2, [x('porotos', 500, 'porotos blancos grandes, cocidos'), x('tomate triturado', 400, 'tomate triturado'), x('cebolla', 150, 'cebolla', 150), x('zanahoria', 80, 'zanahoria', 80), x('aceite', 40, 'aceite de oliva'), x('feta', 80, 'queso feta'), s('ajo, orégano, eneldo o perejil, pimentón y sal')], [
+  'gigantes-horno': r(2, [x('porotos', 500, 'porotos pallares (o judiones), cocidos'), x('tomate triturado', 400, 'tomate triturado'), x('cebolla', 150, 'cebolla', 150), x('zanahoria', 80, 'zanahoria', 80), x('aceite', 40, 'aceite de oliva'), x('feta', 80, 'queso feta'), s('ajo, orégano, eneldo o perejil, pimentón y sal')], [
     'Rehogá la cebolla, la zanahoria y el ajo picados en el aceite, 10 minutos.',
     'Sumá el tomate, el orégano, el pimentón, sal y medio vaso de agua, y cociná 10 minutos.',
     'Mezclá la salsa con los porotos en una fuente y horneá a 180 °C 40 minutos, hasta que espese y se dore arriba.',
-    'Serví con eneldo o perejil y el feta desmenuzado. Es el plato griego de gigantes.',
+    'Serví con eneldo o perejil y el feta desmenuzado. En Grecia se llaman gigantes plakí.',
   ]),
   'pan-tomate': r(2, [x('pan', 160, 'pan de campo o de barra'), x('tomate', 240, 'tomates maduros', 120), x('aceite', 15, 'aceite de oliva'), s('ajo y sal')], [
     'Tostá el pan en rodajas. Si te gusta, frotalo con medio diente de ajo.',
@@ -529,7 +530,7 @@ export const STARTER_RECIPES = {
     'Alternalas en un plato con hojas de albahaca.',
     'Terminá con aceite de oliva, sal y pimienta.',
   ]),
-  hummus: r(2, [x('garbanzos', 240, 'garbanzos cocidos (escurridos)'), x('tahini', 50, 'tahini'), x('limon', 30, 'jugo de limón'), x('aceite', 15, 'aceite de oliva'), s('ajo, comino, pimentón y sal')], [
+  hummus: r(2, [x('garbanzos', 160, 'garbanzos cocidos (escurridos)'), x('tahini', 35, 'tahini'), x('limon', 20, 'jugo de limón'), x('aceite', 15, 'aceite de oliva'), s('ajo, comino, pimentón y sal')], [
     'Procesá los garbanzos con el tahini, el jugo de limón, medio diente de ajo, comino, sal y 3 o 4 cucharadas de agua fría, hasta que quede bien liso.',
     'Probá y ajustá de limón y sal.',
     'Serví con un hilo de aceite de oliva y pimentón por arriba.',

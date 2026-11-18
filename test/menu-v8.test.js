@@ -105,7 +105,8 @@ test('the new foods: the recipe words find them, herbs with no amount are season
     'cuscús': 'cuscus',
     'cous cous': 'cuscus',
     espaguetis: 'fideos',
-    'yogur griego': 'yogur',
+    'yogur griego': 'yogur griego',
+    'yogur natural': 'yogur',
   };
   for (const [text, food] of Object.entries(cases)) assert.equal(matchFood(text), food, text);
   // Canned, shelled or boneless: not counted with the "as bought" values.

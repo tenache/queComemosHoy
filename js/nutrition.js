@@ -89,6 +89,7 @@ export const FOODS = {
   feta: { kcal: 265, protein: 14, carbs: 4, fat: 21, fiber: 0, aliases: ['feta', 'queso feta'] },
   ricota: { kcal: 175, protein: 11, carbs: 3, fat: 13, fiber: 0, aliases: ['ricota', 'ricotta'] },
   yogur: { kcal: 61, protein: 3.5, carbs: 4.7, fat: 3.3, fiber: 0, aliases: ['yogur', 'yogurt'] },
+  'yogur griego': { kcal: 97, protein: 9, carbs: 4, fat: 5, fiber: 0, aliases: ['yogur griego'] },
   'pan de pita': { kcal: 275, protein: 9, carbs: 56, fat: 1.2, fiber: 2.2, aliases: ['pan de pita', 'pan pita', 'pita'], each: 60 },
   cuscus: { kcal: 376, protein: 13, carbs: 77, fat: 0.6, fiber: 5, aliases: ['cuscus', 'cous cous', 'couscous'] },
   bulgur: { kcal: 342, protein: 12, carbs: 76, fat: 1.3, fiber: 12.5, aliases: ['bulgur', 'burgol', 'trigo burgol'] },
