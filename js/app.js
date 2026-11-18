@@ -34,6 +34,7 @@ import {
   flushQueue,
   formatCode,
   friendCounts,
+  friendsByDay,
   friendsPicks,
   isLocalHost,
   joinGroup,
@@ -47,6 +48,7 @@ import {
   renameGroup,
   shouldShare,
 } from './group.js';
+import { STARTER_DISHES } from './dishes.js';
 import { formatItem, itemAmount, mealMacros, parseItem } from './nutrition.js';
 import { recipeFor } from './recipes.js';
 import { STORAGE_KEY, loadState, readBackup, saveState } from './storage.js';
@@ -140,6 +142,7 @@ const ui = {
   groupLists: readCachedGroupLists(), // {code: {code, time, you, groupName, members, picks}}: each group's last list
   openGroups: new Set(), // the codes of the groups opened in Ajustes, to see their members
   friends: null, // dishId while the "💞 También lo eligieron" sheet is open (over the card, or over the list)
+  keepCard: null, // the dish put on the card from Amigos (#40): the mood question, if it shows then, leaves it there
   pickerScroll: 0, // where the list was scrolled when its 💞 was tapped: closing who picked goes back there
   groupInvited: null, // the code of the group whose invitation was copied ("Copiar")
 };
@@ -232,6 +235,13 @@ function addBanner(id, text, { actionLabel, action, sticky = false } = {}) {
   renderBanners();
 }
 
+/** Takes a banner away (the 📌 one from Amigos goes on its own, or with the next card). */
+function dropBanner(id) {
+  if (!ui.banners.some((b) => b.id === id)) return;
+  ui.banners = ui.banners.filter((b) => b.id !== id);
+  renderBanners();
+}
+
 function downloadText(text, filename) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
   const link = h('a', { href: url, download: filename });
@@ -283,6 +293,8 @@ function pick(exclude = []) {
 }
 
 function nextCard() {
+  ui.keepCard = null;
+  dropBanner('pin');
   ui.currentId = pick(ui.currentId ? [ui.currentId] : [])?.id ?? null;
   ui.sideFor = null;
 }
@@ -374,6 +386,7 @@ function togglePin() {
   const side = dishById(ui.sideId);
   if (ui.pinnedSide) ui.pinnedSide = null;
   else if (side) ui.pinnedSide = side.id;
+  dropBanner('pin');
   render();
 }
 
@@ -1301,6 +1314,7 @@ async function refreshGroupList(force = false) {
   const shown = () => JSON.stringify(currentGroupLists().map((l) => [l.code, l.you, l.groupName, l.members]));
   const before = shown();
   const markBefore = ui.currentId && friendsPicks(currentGroupLists(), Date.now()).has(ui.currentId);
+  const friendsLoading = ui.tab === 'friends' && currentGroupLists().length === 0; // "Cargando…" until this ends, whatever the answer
   listing = Promise.all(due.map(async (group) => [group, await listGroup(group)]));
   let results;
   try {
@@ -1319,7 +1333,11 @@ async function refreshGroupList(force = false) {
   const moving = document.querySelector('.card.dragging, .card.flying');
   if (shown() !== before && canRedrawSettings()) render();
   else if (ui.tab === 'today' && markBefore !== markNow && !moving && !ui.picking) render();
+  else if (ui.tab === 'friends' && !ui.afterMeal && (friendsLoading || (friendsShown() !== friendsDrawn && !focusInView()))) render();
 }
+
+/** Someone is on a button or field of the page: a redraw would drop them back to the top. */
+const focusInView = () => Boolean(document.activeElement?.closest?.('#view'));
 
 /** Keeps a group's list answer, and the group's name as its members last set it. */
 function setGroupList(group, data) {
@@ -1352,6 +1370,139 @@ function closeFriends() {
   const item = list?.querySelector(`.pick-item[data-dish="${CSS.escape(dishId)}"]`);
   const back = list ? (item?.querySelector('.pick-mark') ?? item?.querySelector('.list-row')) : document.querySelector('.friends-mark');
   back?.focus({ preventScroll: true });
+}
+
+// ---- 💞 Amigos (#40) --------------------------------------------------------
+
+/**
+ * What the Amigos tab shows from the groups' lists. viewFriends() keeps what
+ * it drew, so a refresh redraws only when it would change, midnight included.
+ */
+function friendsShown() {
+  const lists = currentGroupLists();
+  return JSON.stringify([state.settings.groups.length, lists.length, Boolean(listing), listsStale(lists), navigator.onLine, friendsByDay(lists, Date.now())]);
+}
+
+/** Some group's list wasn't fetched again for a while (offline, or the server failing). */
+const listsStale = (lists) => lists.length > 0 && Date.now() - Math.min(...lists.map((l) => l.time)) > 2 * GROUP_REFRESH_MS;
+let friendsDrawn = null;
+
+/** A dish your friends picked, on the card in Hoy: unpinning a side it doesn't go with. */
+function showOnToday(dish) {
+  const cooked = ui.cooked && dishById(ui.cooked.dishId);
+  if (cooked === dish) {
+    switchTab('today'); // the dish you just logged: its "¡A cocinar!" stays, with Deshacer
+    return focusToday();
+  }
+  if (cooked && !window.confirm(t('friendsReplaceCooked', { cooked: cooked.name, name: dish.name }))) {
+    document.activeElement?.blur(); // a tapped row keeps the focus, and would hold back the list's redraws
+    return;
+  }
+  const pinned = dishById(ui.pinnedSide);
+  if (pinned && !mainCandidates(state.dishes, pinned.id).includes(dish)) {
+    ui.pinnedSide = null;
+    addBanner('pin', t('friendsUnpinned', { side: pinned.name.toLocaleLowerCase('es'), name: dish.name }));
+    const banner = ui.banners.at(-1);
+    setTimeout(() => ui.banners.includes(banner) && dropBanner('pin'), 6000);
+  }
+  ui.currentId = dish.id;
+  ui.keepCard = dish.id;
+  ui.sideFor = null;
+  ui.cooked = null;
+  switchTab('today');
+  if (!ui.mood) ui.keepCard = null; // only for a mood question showing now, not a later change from the chip
+  focusToday();
+}
+
+/** Keyboard and screen readers land on what Hoy shows: the mood question if it's due, else the card or "¡A cocinar!". */
+function focusToday() {
+  const title = document.querySelector('#overlay .sheet button') ?? document.querySelector('#view .card h2, #view h2');
+  if (title && !title.matches('button')) title.tabIndex = -1;
+  title?.focus();
+}
+
+/** One dish your friends picked: tapped, it goes to the card in Hoy (unless it can't be shown there). */
+function friendsRow({ dishId, names }) {
+  const dish = dishById(dishId);
+  const shown = dish ?? STARTER_DISHES.find((d) => d.id === dishId); // deleted on this phone: still say what it was
+  const canShow = Boolean(dish && !dish.neverShow && mainCandidates(state.dishes).includes(dish));
+  // Why it can't go to Hoy: hidden has its badge; deleted, or not a main any more, a line.
+  const why = canShow || dish?.neverShow ? null : t(dish ? 'friendsNotAMain' : 'friendsDeleted');
+  const content = [
+    h('span', { class: 'list-emoji', style: `background:${gradientFor(shown)}`, 'aria-hidden': 'true' }, shown.emoji),
+    h(
+      'span',
+      { class: 'list-text' },
+      h('span', { class: 'list-name' }, shown.name),
+      h('span', { class: 'list-meta' }, listText(names)),
+      why && h('span', { class: 'list-meta' }, why),
+    ),
+    dish?.neverShow && h('span', { class: 'badge' }, t('hidden')),
+  ];
+  return h(
+    'li',
+    null,
+    canShow
+      ? h('button', { type: 'button', class: 'list-row', 'aria-label': t(names.length > 1 ? 'friendsShowOnTodayMany' : 'friendsShowOnToday', { name: shown.name, who: listText(names) }), onclick: () => showOnToday(dish) }, ...content)
+      : h('div', { class: 'list-row off' }, ...content),
+  );
+}
+
+/** "Nico", "Nico y Lucía", "Nico, Lucía e Inés" (Intl knows the "e"; an old browser without it gets commas). */
+let listFormat;
+function listText(names) {
+  try {
+    listFormat ??= new Intl.ListFormat(lang, { type: 'conjunction' });
+    return listFormat.format(names);
+  } catch {
+    return names.join(', ');
+  }
+}
+
+/** "hoy a las 19:37", "ayer a las 19:37", "el martes a las 19:37", by this phone's calendar. */
+function whenText(time) {
+  const d = new Date(time);
+  const now = new Date();
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86_400_000);
+  const day = days === 0 ? t('friendsToday') : days === 1 ? t('friendsYesterday') : t('friendsOnDay', { day: d.toLocaleDateString(lang, { weekday: 'long' }) });
+  return t('friendsAt', { day, time: d.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' }) });
+}
+
+function viewFriends() {
+  const header = h('header', { class: 'top' }, h('h1', null, t('friendsTabTitle')));
+  if (state.settings.groups.length === 0) {
+    return [
+      header,
+      h(
+        'section',
+        { class: 'empty' },
+        h('div', { class: 'empty-emoji', 'aria-hidden': 'true' }, '💞'),
+        h('h2', null, t('friendsNoGroupTitle')),
+        h('p', null, t('friendsNoGroupText')),
+        button(t('friendsGoToSettings'), () => switchTab('settings'), 'primary'),
+      ),
+    ];
+  }
+  friendsDrawn = friendsShown();
+  const lists = currentGroupLists();
+  const retry = button(t('friendsRetry'), () => {
+    refreshGroupList(true);
+    render();
+  });
+  const offline = navigator.onLine === false && h('p', { class: 'help' }, t('friendsOffline'));
+  if (lists.length === 0) {
+    return [header, h('p', { class: 'muted' }, t(listing ? 'friendsLoading' : 'friendsNotLoaded')), !listing && !ui.readOnly && retry];
+  }
+  // A list kept from a while ago: say when it's from.
+  const oldest = Math.min(...lists.map((l) => l.time));
+  const stale =
+    !listing &&
+    listsStale(lists) &&
+    h('p', { class: 'help' }, t('friendsStale', { when: whenText(oldest) }), offline ? ` ${t('friendsOffline')}` : '', ' ', retry);
+  const { today, yesterday } = friendsByDay(lists, Date.now());
+  if (today.length === 0 && yesterday.length === 0) return [header, h('p', { class: 'muted' }, t('friendsEmpty')), stale];
+  const day = (title, rows) => rows.length > 0 && [h('h2', { class: 'list-heading' }, title), h('ul', { class: 'list' }, rows.map(friendsRow))];
+  return [header, h('p', { class: 'help' }, t('friendsTabHelp')), stale, day(t('friendsTodayTitle'), today), day(t('friendsYesterdayTitle'), yesterday)];
 }
 
 function overlayFriends() {
@@ -2150,8 +2301,11 @@ function overlayMood() {
   const choose = (id) => {
     setMood(state, id, Date.now());
     ui.mood = false;
-    // Another mood weighs the dishes differently: draw the card and its side again.
-    if (id !== current) {
+    const keep = ui.keepCard;
+    ui.keepCard = null;
+    // Another mood weighs the dishes differently: draw the card and its side again,
+    // unless it's a dish just chosen from Amigos (#40).
+    if (id !== current && !(keep && keep === ui.currentId)) {
       ui.currentId = null;
       ui.sideFor = null;
     }
@@ -2239,6 +2393,7 @@ const TABS = [
   ['today', '🍽️', 'tabToday', viewToday],
   ['dishes', '📖', 'tabDishes', viewDishes],
   ['pantry', '🛒', 'tabPantry', viewPantry],
+  ['friends', '💞', 'tabFriends', viewFriends],
   ['settings', '⚙️', 'tabSettings', viewSettings],
 ];
 
@@ -2246,7 +2401,7 @@ function switchTab(tab) {
   ui.tab = tab;
   ui.editing = null;
   wheelView.close();
-  if (tab === 'settings') refreshGroupList(true);
+  if (tab === 'settings' || tab === 'friends') refreshGroupList(true);
   if (tab === 'today') refreshGroupList();
   render();
   window.scrollTo(0, 0);
@@ -2296,7 +2451,7 @@ function render() {
         'button',
         { type: 'button', class: 'tab', 'aria-current': id === ui.tab ? 'page' : null, onclick: () => switchTab(id) },
         h('span', { class: 'tab-icon', 'aria-hidden': 'true' }, icon),
-        h('span', null, t(label)),
+        h('span', { class: 'tab-label' }, t(label)),
         id === 'pantry' && state.missing.length > 0 && h('span', { class: 'count' }, String(state.missing.length)),
       ),
     ),
@@ -2410,7 +2565,7 @@ document.addEventListener('visibilitychange', () => {
   checkAfterMeal();
   // Back on a new day: render() asks how the cook is (only on Hoy, so an open dish form keeps what was typed).
   const moodDue = !ui.mood && ui.tab === 'today' && moodToday(state, Date.now()) === null;
-  if (ui.afterMeal !== before || moodDue) render();
+  if (ui.afterMeal !== before || moodDue || (ui.tab === 'friends' && !ui.afterMeal)) render(); // Amigos: today may be yesterday now
 });
 
 document.addEventListener('keydown', (e) => {
@@ -2436,6 +2591,10 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('online', () => {
   flushGroup();
   refreshGroupList();
+  if (ui.tab === 'friends' && !ui.afterMeal) render(); // "Sin conexión." goes
+});
+window.addEventListener('offline', () => {
+  if (ui.tab === 'friends' && !ui.afterMeal) render(); // "Sin conexión." shows
 });
 // The app can stay open for a long dinner decision: look again now and then,
 // and retry picks that a server error (5xx) or the rate limit held back.
