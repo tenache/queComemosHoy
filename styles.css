@@ -261,8 +261,8 @@ button.chip[aria-pressed='true'] {
 /* Despensa (#42): every mark the same width, so a tap never moves another chip. */
 .chip-mark {
   display: inline-block;
-  width: 1.3em;
-  margin-left: -0.2em;
+  width: 1.5em;
+  margin-left: -0.3em;
   text-align: center;
 }
 
@@ -284,21 +284,21 @@ button.chip[aria-pressed='true'] {
 
 .pantry-switch button {
   flex: 1;
+  min-width: 0;
+  font-size: min(0.9rem, 4.2vw);
+  overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-/* Search and the bulk buttons stay in view while scrolling the chips. */
+/* The search stays in view while scrolling the chips (only it: small phones need the room). */
 .pantry-bar {
   position: sticky;
   top: env(safe-area-inset-top);
   z-index: 3;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   margin: 0 -16px;
-  padding: 8px 16px;
+  padding: 6px 16px;
   background: var(--bg);
-  border-bottom: 1px solid var(--line);
 }
 
 .search-row {
@@ -337,12 +337,32 @@ button.chip[aria-pressed='true'] {
 .pantry-bulk .btn {
   flex: 1;
   min-width: 0;
+  padding: 10px 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: min(1rem, 4.2vw); /* "✗ No tengo nada" whole on a 320 px phone */
+}
+
+/* The count and one line under it, each always one line: the chips below never move. */
+.pantry-help {
+  display: flex;
+  flex-direction: column;
+}
+
+.pantry-help span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .pantry-add {
-  align-self: flex-start;
-  color: var(--text);
-  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
 }
 
 /* Bought: crossed out where it was, until you leave the list. */
@@ -797,6 +817,11 @@ select {
 .shop-row span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.shop-row .btn {
+  flex: none;
+  white-space: nowrap;
 }
 
 .add-row {

@@ -79,16 +79,19 @@ test('haveNothing: manual with nothing had, the list untouched; undo puts it bac
   assert.deepEqual(s.missing, ['leche']);
 });
 
-test('haveEverything: lazy, the list untouched (still missing); undo puts the manual pantry back', () => {
+test('haveEverything: lazy, everything had, the list bought; undo puts the manual pantry and the list back', () => {
   const s = stateWith('manual', { missing: ['leche'], inStock: ['arroz'] });
   const before = haveEverything(s);
   assert.ok(hasEverything(s));
   assert.equal(pantryStatus(s, 'fideos'), 'have');
-  assert.equal(pantryStatus(s, 'leche'), 'out');
+  assert.equal(pantryStatus(s, 'leche'), 'have');
+  assert.deepEqual(s.missing, []);
   undoPantry(s, before);
   assert.equal(s.settings.pantryMode, 'manual');
   assert.deepEqual(s.inStock, ['arroz']);
+  assert.deepEqual(s.missing, ['leche']);
   assert.equal(pantryStatus(s, 'fideos'), 'none');
+  assert.equal(pantryStatus(s, 'leche'), 'out');
 });
 
 test('undoPantry: a name put on the list since stays on it, off the pantry', () => {
@@ -109,7 +112,8 @@ test('undoPantry: a broken record falls back to lazy, never throws', () => {
 });
 
 test('hasEverything / hasNothing: when the button would change nothing', () => {
-  assert.ok(hasEverything(stateWith('lazy', { missing: ['leche'] })));
+  assert.ok(hasEverything(stateWith('lazy')));
+  assert.ok(!hasEverything(stateWith('lazy', { missing: ['leche'] })), 'something on the list: not everything');
   assert.ok(!hasEverything(stateWith('manual')));
   assert.ok(hasNothing(stateWith('manual', { missing: ['leche'] })));
   assert.ok(!hasNothing(stateWith('manual', { inStock: ['arroz'] })));

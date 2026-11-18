@@ -421,19 +421,20 @@ export function togglePantry(state, name) {
 }
 
 /** What "Tengo todo" and "No tengo nada" change, to put it back with undoPantry(). */
-const pantryBefore = (state) => ({ pantryMode: state.settings.pantryMode, inStock: [...state.inStock] });
+const pantryBefore = (state) => ({ pantryMode: state.settings.pantryMode, inStock: [...state.inStock], missing: [...state.missing] });
 
 /** Would "Tengo todo" / "No tengo nada" change anything? */
-export const hasEverything = (state) => state.settings.pantryMode === 'lazy';
+export const hasEverything = (state) => state.settings.pantryMode === 'lazy' && state.missing.length === 0;
 export const hasNothing = (state) => state.settings.pantryMode === 'manual' && state.inStock.length === 0;
 
 /**
- * "Tengo todo": everything counts as available, except what's on the
- * shopping list (lazy mode). The list stays as it is. Returns the undo.
+ * "Tengo todo": everything counts as available (lazy mode), so nothing is
+ * missing: what was on the shopping list is bought. Returns the undo.
  */
 export function haveEverything(state) {
   const before = pantryBefore(state);
   state.settings.pantryMode = 'lazy';
+  markInStock(state, state.missing);
   return before;
 }
 
@@ -447,11 +448,12 @@ export function haveNothing(state) {
 
 /**
  * Takes back "Tengo todo" or "No tengo nada": the mode and the manual
- * pantry as they were. The shopping list keeps any change since, so a
- * name on it now stays off the pantry.
+ * pantry as they were, and what was on the shopping list back on it. A
+ * name added to the list since stays on it, off the pantry.
  */
 export function undoPantry(state, before) {
   state.settings.pantryMode = PANTRY_MODES.includes(before.pantryMode) ? before.pantryMode : 'lazy';
+  markMissing(state, cleanNames(before.missing));
   state.inStock = cleanNames(before.inStock).filter((n) => !state.missing.includes(n));
 }
 

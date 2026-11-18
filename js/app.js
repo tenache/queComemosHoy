@@ -1135,6 +1135,19 @@ function refreshBulkButtons() {
     old.replaceWith(fresh);
     if (focused) fresh.focus({ preventScroll: true });
   }
+  for (const hint of document.querySelectorAll('.pantry-hint')) hint.textContent = pantryHint(hint.dataset.view) || '\u00a0';
+}
+
+/**
+ * The line under the count: what a tap does, or, while Deshacer shows,
+ * what it would take back. Always one line, so the chips never move.
+ */
+function pantryHint(view) {
+  const undo = ui.pantryUndo && Date.now() < ui.pantryUndo.until ? ui.pantryUndo : null;
+  if (view === 'list') return undo?.kind === 'bought' ? t('shopBoughtAllDone') : '';
+  if (undo?.kind === 'all') return t(undo.before.missing.length > 0 ? 'pantryAllDoneList' : 'pantryAllDone');
+  if (undo?.kind === 'nothing') return t('pantryNothingDone');
+  return state.settings.pantryMode === 'manual' ? t('pantryTapManual') : t('pantryTapLazy');
 }
 
 /** Redraws, keeping Despensa's search or add box focused with the cursor where it was (a redraw replaces them; their text is in `ui`). */
@@ -1165,6 +1178,10 @@ function pantryChip(name) {
   const chip = h('button', {
     type: 'button',
     'data-key': searchKey(name),
+    // Searching: the tap leaves the focus in the search, so the keyboard stays up to look for the next one.
+    onpointerdown: (e) => {
+      if (document.activeElement?.id === 'pantry-search') e.preventDefault();
+    },
     onclick: () => {
       togglePantry(state, name);
       // Marking by hand after "Tengo todo" / "No tengo nada" keeps that: a Deshacer would undo these taps too.
@@ -1189,13 +1206,16 @@ function pantryChip(name) {
 /** Shows only the chips that match the search, and offers to add what isn't there. In place, so the keyboard stays up. */
 function filterPantry() {
   const q = searchKey(ui.pantrySearch);
+  // "huevos" finds "huevo", "tomates" finds "tomate": the word without its plural ending too.
+  const stems = [...new Set([q, q.replace(/es$/, ''), q.replace(/s$/, '')])].filter((x) => x === q || x.length >= 3);
+  const same = (key) => stems.some((x) => key === x || key === `${x}s` || key === `${x}es`);
   let shown = 0;
   let exact = false;
   for (const chip of document.querySelectorAll('.pantry-chips .chip')) {
-    const match = chip.dataset.key.includes(q);
+    const match = stems.some((x) => chip.dataset.key.includes(x));
     chip.hidden = !match;
     if (match) shown++;
-    if (chip.dataset.key === q) exact = true;
+    if (q && same(chip.dataset.key)) exact = true;
   }
   const none = document.querySelector('.pantry-none');
   if (none) none.hidden = shown > 0;
@@ -1203,7 +1223,7 @@ function filterPantry() {
   if (add) {
     const names = splitList(ui.pantrySearch);
     add.hidden = names.length === 0 || exact;
-    if (names.length > 0) add.textContent = t('pantryAddToList', { name: names.join(', ') });
+    add.querySelector('.pantry-add-text').textContent = t('pantryAddNew', { name: names.join(', ') });
   }
   const clear = document.querySelector('.search-clear');
   if (clear) clear.hidden = q === '';
@@ -1234,33 +1254,40 @@ function viewPantryHave() {
     filterPantry();
     search.focus();
   }, 'search-clear ghost', { 'aria-label': t('pantrySearchClear') });
-  const addToList = button('', () => {
+  // Something typed that isn't an ingredient yet: add it, as had or to buy.
+  const addNew = (mark) => () => {
     const names = splitList(ui.pantrySearch);
     if (names.length === 0) return;
-    markMissing(state, names);
+    mark(state, names);
     redrawAfter(commit);
-  }, 'pantry-add ghost');
+  };
+  const addRow = h(
+    'div',
+    { class: 'pantry-add', hidden: true },
+    h('span', { class: 'pantry-add-text' }),
+    h(
+      'div',
+      { class: 'row' },
+      button(`✓ ${t('pantryAddHave')}`, addNew(markInStock), 'small'),
+      button(`🛒 ${t('pantryAddToList')}`, addNew(markMissing), 'small'),
+    ),
+  );
 
   const names = allIngredients(state);
   const have = names.filter((n) => pantryStatus(state, n) === 'have').length;
-  const view = [
+  return [
+    h('div', { class: 'pantry-bar' }, h('div', { class: 'search-row' }, search, clear)),
+    h('div', { class: 'pantry-bulk' }, bulkButton('all'), bulkButton('nothing')),
     h(
-      'div',
-      { class: 'pantry-bar' },
-      h('div', { class: 'search-row' }, search, clear),
-      h(
-        'div',
-        { class: 'pantry-bulk' },
-        bulkButton('all'),
-        bulkButton('nothing'),
-      ),
+      'p',
+      { class: 'help pantry-help' },
+      h('span', { class: 'pantry-summary' }, t('pantrySummary', { have, total: names.length })),
+      h('span', { class: 'pantry-hint', 'data-view': 'have' }, pantryHint('have')),
     ),
-    h('p', { class: 'help' }, h('span', { class: 'pantry-summary' }, t('pantrySummary', { have, total: names.length })), ' ', manual ? t('pantryTapManual') : t('pantryTapLazy')),
+    addRow,
     h('div', { class: 'chips pantry-chips' }, names.map(pantryChip)),
     h('p', { class: 'muted pantry-none', hidden: true }, t('pantryNoMatch')),
-    addToList,
   ];
-  return view;
 }
 
 /** Runs a change that redraws (commit), keeping the search box's focus. */
@@ -1299,8 +1326,11 @@ function viewPantryList() {
   return [
     h('form', { class: 'add-row', onsubmit: addItem }, addInput, h('button', { type: 'submit', class: 'btn' }, t('add'))),
     h('datalist', { id: 'shop-suggestions' }, ingredients.filter((n) => !state.missing.includes(n)).map((n) => h('option', { value: n }))),
+    // At the top, so it's in reach however long the list is; it and its line keep their size, so the rows never move.
+    ui.shopRows.length > 0 && h('div', { class: 'pantry-bulk' }, bulkButton('bought')),
+    ui.shopRows.length > 0 && h('p', { class: 'help pantry-help' }, h('span', { class: 'pantry-hint', 'data-view': 'list' }, pantryHint('list') || '\u00a0')),
     ui.shopRows.length === 0
-      ? [h('p', { class: 'muted' }, t('shoppingEmpty')), pantryUndoFor('bought') && h('div', { class: 'pantry-bulk' }, bulkButton('bought'))]
+      ? h('p', { class: 'muted' }, t('shoppingEmpty'))
       : [
           h(
             'ul',
@@ -1323,7 +1353,6 @@ function viewPantryList() {
               );
             }),
           ),
-          h('div', { class: 'pantry-bulk' }, bulkButton('bought')),
           anyBought && h('p', { class: 'help' }, t('shopBoughtHelp')),
         ],
   ];
@@ -1409,6 +1438,7 @@ function viewSettings() {
     h('h2', { class: 'section' }, t('pantryMode')),
     mode('lazy', t('pantryLazy'), t('pantryLazyHelp')),
     mode('manual', t('pantryManual'), t('pantryManualHelp')),
+    h('p', { class: 'help' }, t('pantryModeNote')),
     h('h2', { class: 'section' }, t('variety')),
     varietyControl(),
     h('p', { class: 'help' }, t('varietyHelp')),
