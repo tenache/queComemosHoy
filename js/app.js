@@ -142,6 +142,7 @@ const ui = {
   groupLists: readCachedGroupLists(), // {code: {code, time, you, groupName, members, picks}}: each group's last list
   openGroups: new Set(), // the codes of the groups opened in Ajustes, to see their members
   friends: null, // dishId while the "💞 También lo eligieron" sheet is open (over the card, or over the list)
+  keepCard: null, // the dish put on the card from Amigos (#40): the mood question, if it shows then, leaves it there
   pickerScroll: 0, // where the list was scrolled when its 💞 was tapped: closing who picked goes back there
   groupInvited: null, // the code of the group whose invitation was copied ("Copiar")
 };
@@ -285,6 +286,7 @@ function pick(exclude = []) {
 }
 
 function nextCard() {
+  ui.keepCard = null;
   ui.currentId = pick(ui.currentId ? [ui.currentId] : [])?.id ?? null;
   ui.sideFor = null;
 }
@@ -1304,6 +1306,7 @@ async function refreshGroupList(force = false) {
   const before = shown();
   const markBefore = ui.currentId && friendsPicks(currentGroupLists(), Date.now()).has(ui.currentId);
   const friendsBefore = friendsShown();
+  const friendsLoading = ui.tab === 'friends' && currentGroupLists().length === 0; // "Cargando…" until this ends, whatever the answer
   listing = Promise.all(due.map(async (group) => [group, await listGroup(group)]));
   let results;
   try {
@@ -1322,8 +1325,11 @@ async function refreshGroupList(force = false) {
   const moving = document.querySelector('.card.dragging, .card.flying');
   if (shown() !== before && canRedrawSettings()) render();
   else if (ui.tab === 'today' && markBefore !== markNow && !moving && !ui.picking) render();
-  else if (ui.tab === 'friends' && friendsShown() !== friendsBefore) render();
+  else if (ui.tab === 'friends' && !ui.afterMeal && (friendsLoading || (friendsShown() !== friendsBefore && !focusInView()))) render();
 }
+
+/** Someone is on a button or field of the page: a redraw would drop them back to the top. */
+const focusInView = () => Boolean(document.activeElement?.closest?.('#view'));
 
 /** Keeps a group's list answer, and the group's name as its members last set it. */
 function setGroupList(group, data) {
@@ -1367,9 +1373,14 @@ const friendsShown = () => JSON.stringify([state.settings.groups.length, current
 function showOnToday(dish) {
   if (ui.pinnedSide && !mainCandidates(state.dishes, ui.pinnedSide).includes(dish)) ui.pinnedSide = null;
   ui.currentId = dish.id;
+  ui.keepCard = dish.id;
   ui.sideFor = null;
   ui.cooked = null;
   switchTab('today');
+  // Keyboard and screen readers land on what's showing: the mood question if it's due, else the card.
+  const title = document.querySelector('#overlay .sheet button') ?? document.querySelector('#view .card h2');
+  if (title && !title.matches('button')) title.tabIndex = -1;
+  title?.focus();
 }
 
 /** One dish your friends picked: tapped, it goes to the card in Hoy (unless it can't be shown there). */
@@ -1391,8 +1402,16 @@ function friendsRow({ dishId, names }) {
   );
 }
 
-/** "Nico", "Nico y Lucía", "Nico, Lucía e Inés" (Intl knows the "e"). */
-const listText = (names) => new Intl.ListFormat(lang, { type: 'conjunction' }).format(names);
+/** "Nico", "Nico y Lucía", "Nico, Lucía e Inés" (Intl knows the "e"; an old browser without it gets commas). */
+let listFormat;
+function listText(names) {
+  try {
+    listFormat ??= new Intl.ListFormat(lang, { type: 'conjunction' });
+    return listFormat.format(names);
+  } catch {
+    return names.join(', ');
+  }
+}
 
 function viewFriends() {
   const header = h('header', { class: 'top' }, h('h1', null, t('friendsTabTitle')));
@@ -1410,7 +1429,7 @@ function viewFriends() {
     ];
   }
   const lists = currentGroupLists();
-  if (lists.length === 0) return [header, h('p', { class: 'muted' }, t('friendsNotLoaded'))];
+  if (lists.length === 0) return [header, h('p', { class: 'muted' }, t(listing ? 'friendsLoading' : 'friendsNotLoaded'))];
   const { today, yesterday } = friendsByDay(lists, Date.now());
   if (today.length === 0 && yesterday.length === 0) return [header, h('p', { class: 'muted' }, t('friendsEmpty'))];
   const day = (title, rows) => rows.length > 0 && [h('h2', { class: 'list-heading' }, title), h('ul', { class: 'list' }, rows.map(friendsRow))];
@@ -2213,8 +2232,11 @@ function overlayMood() {
   const choose = (id) => {
     setMood(state, id, Date.now());
     ui.mood = false;
-    // Another mood weighs the dishes differently: draw the card and its side again.
-    if (id !== current) {
+    const keep = ui.keepCard;
+    ui.keepCard = null;
+    // Another mood weighs the dishes differently: draw the card and its side again,
+    // unless it's a dish just chosen from Amigos (#40).
+    if (id !== current && !(keep && keep === ui.currentId)) {
       ui.currentId = null;
       ui.sideFor = null;
     }
@@ -2474,7 +2496,7 @@ document.addEventListener('visibilitychange', () => {
   checkAfterMeal();
   // Back on a new day: render() asks how the cook is (only on Hoy, so an open dish form keeps what was typed).
   const moodDue = !ui.mood && ui.tab === 'today' && moodToday(state, Date.now()) === null;
-  if (ui.afterMeal !== before || moodDue || ui.tab === 'friends') render(); // Amigos: today may be yesterday now
+  if (ui.afterMeal !== before || moodDue || (ui.tab === 'friends' && !ui.afterMeal)) render(); // Amigos: today may be yesterday now
 });
 
 document.addEventListener('keydown', (e) => {

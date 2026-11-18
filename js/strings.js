@@ -252,6 +252,7 @@ const STRINGS = {
     friendsShowOnToday: '{name}, lo eligió {who}. Ver en Hoy',
     friendsShowOnTodayMany: '{name}, lo eligieron {who}. Ver en Hoy',
     friendsEmpty: 'Nadie de tus grupos eligió nada hoy ni ayer.',
+    friendsLoading: 'Cargando…',
     friendsNotLoaded: 'Todavía no pudimos ver tus grupos. Probá de nuevo con conexión.',
     friendsNoGroupTitle: 'Todavía no estás en un grupo',
     friendsNoGroupText: 'Creá un grupo o sumate a uno con un código, y acá ves lo que eligen tus amigos hoy y ayer.',
