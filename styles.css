@@ -375,6 +375,43 @@ button.chip[aria-pressed='true'] {
   border-radius: 14px;
 }
 
+/* "Listo, ¿qué cocinamos?" (#42): floats above the tabs once a couple of things are marked. The page keeps room
+   for it at the bottom always, so it never covers the last chips and showing it moves nothing. */
+.view-pantry {
+  padding-bottom: calc(var(--tabs-h) + 96px + env(safe-area-inset-bottom));
+}
+
+.pantry-done {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--tabs-h) + 12px + env(safe-area-inset-bottom));
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  pointer-events: none;
+  animation: pantry-done-in 0.25s ease-out;
+}
+
+.pantry-done[hidden] {
+  display: none;
+}
+
+.pantry-done .btn {
+  width: 100%;
+  max-width: 448px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+
+@keyframes pantry-done-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
 /* Bought: crossed out where it was, until you leave the list. */
 .shop-row.bought span {
   text-decoration: line-through;

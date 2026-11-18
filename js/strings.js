@@ -197,6 +197,7 @@ const STRINGS = {
     pantryNothingDone: 'Listo: no tenés nada. Tocá lo que tenés.',
     pantryTapManual: 'Tocá lo que tenés.',
     pantryNoMatch: 'Ningún ingrediente con ese nombre.',
+    pantryDone: 'Listo, ¿qué cocinamos? →',
     pantryAddNew: '«{name}» no está. ¿Lo agregás?',
     pantryAddHave: 'Lo tengo',
     pantryAddToList: 'A la lista',

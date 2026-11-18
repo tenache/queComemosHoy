@@ -161,6 +161,7 @@ const ui = {
   pantryUndo: null, // {kind: 'all' | 'nothing' | 'bought', before, until}: the bulk action that can be taken back for a while
   shopRows: null, // the list's rows in the order shown: bought ones stay crossed out until you leave it
   shopAdd: '', // what's typed in the list's add box
+  pantryEdits: 0, // changes made in Qué tengo since coming to Despensa: from PANTRY_DONE_AFTER on, "Listo, ¿qué cocinamos?" shows
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1073,6 +1074,25 @@ function viewDishForm() {
 // How long "Deshacer" stays on a bulk button.
 const PANTRY_UNDO_MS = 20_000;
 
+// After this many changes in Qué tengo, "Listo, ¿qué cocinamos?" offers to go to the cards (like the wheel's "¿Y si cocinamos?").
+const PANTRY_DONE_AFTER = 2;
+
+/** One more change in Qué tengo (`n`: a bulk "Tengo todo" counts as enough at once); shows the button when it's time. */
+function pantryEdited(n = 1) {
+  ui.pantryEdits += n;
+  const done = document.querySelector('.pantry-done');
+  if (done) done.hidden = ui.pantryEdits < PANTRY_DONE_AFTER;
+}
+
+/** "Listo, ¿qué cocinamos?": to Hoy, with a card drawn again for what's in the pantry now. */
+function doneWithPantry() {
+  if (!ui.cooked) {
+    ui.currentId = null; // drawn again by ensureCurrent(), now that the pantry changed
+    ui.sideFor = null;
+  }
+  switchTab('today');
+}
+
 /** For search: lowercase, no accents ("Azúcar" → "azucar"). */
 const searchKey = (text) => String(text).normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').trim();
 
@@ -1100,6 +1120,8 @@ function bulkPantry(kind) {
   const n = state.missing.length;
   if (kind === 'all' && n > 0 && !window.confirm(n === 1 ? t('pantryAllConfirmOne', { name: state.missing[0] }) : t('pantryAllConfirm', { n }))) return;
   const before = BULK[kind].apply(state);
+  // "Tengo todo" is a whole pantry at once; after "No tengo nada" you still have to tick what you have.
+  if (kind === 'all') ui.pantryEdits += PANTRY_DONE_AFTER;
   const undo = { kind, before, since: Date.now(), until: Date.now() + PANTRY_UNDO_MS };
   ui.pantryUndo = undo;
   setTimeout(() => {
@@ -1201,6 +1223,7 @@ function pantryChip(name) {
     onclick: () => {
       togglePantry(state, name);
       endPantryUndo({ list: false }); // "Compré todo" can still be taken back: it only puts its names back on the list
+      pantryEdited();
       save();
       paint();
       updatePantryCounts();
@@ -1281,6 +1304,7 @@ function viewPantryHave() {
     if (names.length === 0) return;
     mark(state, names);
     addIngredients(state, names);
+    ui.pantryEdits += 1;
     endPantryUndo(); // marked by hand, as a chip tap: a Deshacer would undo it too
     // Show what was added: the one name, or (several) everything.
     ui.pantrySearch = names.length === 1 ? names[0] : '';
@@ -1315,6 +1339,12 @@ function viewPantryHave() {
     h('div', { class: 'chips pantry-chips' }, names.map(pantryChip)),
     h('p', { class: 'muted pantry-none', hidden: true }, t('pantryNoMatch')),
     addRow,
+    // Floats over the bottom of the page, above the tabs: showing it moves nothing.
+    h(
+      'div',
+      { class: 'pantry-done', hidden: ui.pantryEdits < PANTRY_DONE_AFTER },
+      button(`🍳 ${t('pantryDone')}`, doneWithPantry, 'primary', { onpointerdown: (e) => document.activeElement?.id === 'pantry-search' && e.preventDefault() }),
+    ),
   ];
 }
 
@@ -2705,6 +2735,7 @@ const TABS = [
 
 function switchTab(tab) {
   if (tab !== ui.tab) ui.shopRows = null; // Despensa: rows bought go when you leave the list
+  if (tab === 'pantry' && ui.tab !== 'pantry') ui.pantryEdits = 0;
   ui.tab = tab;
   ui.editing = null;
   wheelView.close();
