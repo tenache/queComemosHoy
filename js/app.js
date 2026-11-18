@@ -6,6 +6,7 @@ import { PARAMS, PARAM_GROUPS, applyParams, cleanParams, defaultParam, paramSour
 import {
   MAX_MAINS,
   PORTIONS,
+  addIngredients,
   allIngredients,
   allMains,
   boughtAll,
@@ -1096,14 +1097,18 @@ const UNDO_GUARD_MS = 500;
 
 function bulkPantry(kind) {
   // "Tengo todo" also empties the shopping list: ask first, since the next tap on a chip ends its Deshacer.
-  if (kind === 'all' && state.missing.length > 0 && !window.confirm(t('pantryAllConfirm', { n: state.missing.length }))) return;
+  const n = state.missing.length;
+  if (kind === 'all' && n > 0 && !window.confirm(n === 1 ? t('pantryAllConfirmOne', { name: state.missing[0] }) : t('pantryAllConfirm', { n }))) return;
   const before = BULK[kind].apply(state);
   const undo = { kind, before, since: Date.now(), until: Date.now() + PANTRY_UNDO_MS };
   ui.pantryUndo = undo;
   setTimeout(() => {
     if (ui.pantryUndo !== undo) return;
     ui.pantryUndo = null;
-    refreshBulkButtons(); // just the buttons: a redraw would close the keyboard and lose what's being typed
+    // Just the buttons: a redraw would close the keyboard and lose what's being typed. On an empty list, the
+    // "Compré todo" row goes altogether (nothing left to buy), which is a redraw.
+    if (ui.tab === 'pantry' && ui.pantryView === 'list' && state.missing.length === 0) redrawPantryKeepingFocus();
+    else refreshBulkButtons();
   }, PANTRY_UNDO_MS + 50);
   commit();
 }
@@ -1213,27 +1218,32 @@ function pantryChip(name) {
   return chip;
 }
 
+/** One word with its plural ending (and the z → c of "arroz/arroces") taken off, to compare names: "tomates" and "tomate" → "tomat". */
+const singularWord = (w) => (w.length > 3 ? w.replace(/s$/, '').replace(/e$/, '').replace(/z$/, 'c') : w);
+
 /** Shows only the chips that match the search, and offers to add what isn't there. In place, so the keyboard stays up. */
 function filterPantry() {
   const q = searchKey(ui.pantrySearch);
   // Each word without its plural ending too: "huevos" finds huevo, "arroces" arroz, "cebollas moradas" cebolla morada.
-  const singular = q
-    .split(' ')
-    .map((w) => (w.length > 3 ? w.replace(/ces$/, 'z').replace(/(es|s)$/, '') : w))
-    .join(' ');
+  // Word by word, each typed word the start of a word of the name, singular or plural alike:
+  // "huevos" finds huevo, "arroces" arroz, "tomates triturados" tomate triturado, "fideo" fideos.
+  const typed = q.split(' ').filter(Boolean).map(singularWord);
   let shown = 0;
+  let exact = false;
   for (const chip of document.querySelectorAll('.pantry-chips .chip')) {
-    const match = chip.dataset.key.includes(q) || chip.dataset.key.includes(singular);
+    const words = chip.dataset.key.split(' ').map(singularWord);
+    const match = chip.dataset.key.includes(q) || typed.every((w) => words.some((k) => k.startsWith(w)));
     chip.hidden = !match;
     if (match) shown++;
+    if (q && words.join(' ') === typed.join(' ')) exact = true;
   }
-  // Nothing matches: say so, and offer to add it (not while a match shows: "tom" while typing "tomate").
   const none = document.querySelector('.pantry-none');
   if (none) none.hidden = shown > 0;
+  // Not there by that name (it may be inside a longer one: "sal" in salsa): offer to add it, under the chips.
   const add = document.querySelector('.pantry-add');
   if (add) {
     const names = splitList(ui.pantrySearch);
-    add.hidden = names.length === 0 || shown > 0;
+    add.hidden = names.length === 0 || exact || (shown > 0 && q.length < 3);
     add.querySelector('.pantry-add-text').textContent = t('pantryAddNew', { name: names.join(', ') });
   }
   const clear = document.querySelector('.search-clear');
@@ -1270,6 +1280,7 @@ function viewPantryHave() {
     const names = splitList(ui.pantrySearch);
     if (names.length === 0) return;
     mark(state, names);
+    addIngredients(state, names);
     endPantryUndo(); // marked by hand, as a chip tap: a Deshacer would undo it too
     // Show what was added: the one name, or (several) everything.
     ui.pantrySearch = names.length === 1 ? names[0] : '';
@@ -1335,6 +1346,7 @@ function viewPantryList() {
     const names = splitList(addInput.value);
     if (names.length === 0) return;
     markMissing(state, names);
+    addIngredients(state, names);
     ui.shopAdd = '';
     endPantryUndo();
     commit();

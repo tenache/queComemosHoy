@@ -38,7 +38,7 @@ export function defaultState() {
     // params: this phone's tuning (params.js), {key: number}; empty = the defaults.
     // mood: the last answer to "¿Cómo está nuestro cocinero hoy?", {day: 'YYYY-MM-DD', id}; null = never asked.
     // groups: the friends' groups this phone is in (group.js, #23, #33); [] = none.
-    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null, groups: [] },
+    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null, groups: [], pantryAdded: [] },
     cuisines: [...DEFAULT_CUISINES], // the delivery wheel's slices
     deliveries: [], // {time, cuisine | null, manual?: true}
   };
@@ -359,6 +359,8 @@ export function normalizeState(input) {
       params: cleanParams(settings.params),
       mood: cleanMood(settings.mood),
       groups: cleanGroups(settings.groups),
+      // Ingredients added by hand in Despensa (#42), so they stay listed when not had (also optional, no schema step).
+      pantryAdded: cleanNames(settings.pantryAdded),
     },
     cuisines: cleanCuisines(raw.cuisines),
     deliveries: (Array.isArray(raw.deliveries) ? raw.deliveries : [])
@@ -471,9 +473,15 @@ export function undoBoughtAll(state, names) {
   markMissing(state, names);
 }
 
+/** Ingredients added by hand (Despensa's search or the list's box): listed even when not had nor on the list. */
+export function addIngredients(state, names) {
+  const added = state.settings.pantryAdded ?? (state.settings.pantryAdded = []);
+  for (const n of cleanNames(names)) if (!added.includes(n)) added.push(n);
+}
+
 /** Every ingredient the app knows about, sorted. */
 export function allIngredients(state) {
-  const all = new Set([...state.missing, ...state.inStock]);
+  const all = new Set([...state.missing, ...state.inStock, ...(state.settings.pantryAdded ?? [])]);
   for (const dish of state.dishes) for (const i of dish.ingredients) all.add(i);
   return [...all].sort((a, b) => a.localeCompare(b, 'es'));
 }

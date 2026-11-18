@@ -142,6 +142,19 @@ test('boughtAll and undoBoughtAll, in both modes', () => {
   }
 });
 
+test('an ingredient added by hand stays listed when not had (No tengo nada, a Manual untick) and survives a save', async () => {
+  const { addIngredients, allIngredients, normalizeState, markInStock } = await import('../js/state.js');
+  const s = stateWith('lazy');
+  markInStock(s, ['quinoa']);
+  addIngredients(s, ['Quinoa ']);
+  haveNothing(s);
+  assert.ok(allIngredients(s).includes('quinoa'));
+  assert.equal(pantryStatus(s, 'quinoa'), 'none');
+  const again = normalizeState(JSON.parse(JSON.stringify(s)));
+  assert.deepEqual(again.settings.pantryAdded, ['quinoa']);
+  assert.ok(allIngredients(again).includes('quinoa'));
+});
+
 test('a name both on the list and in the pantry (old or imported data): the list wins, so the chip and the suggestions agree', async () => {
   const { normalizeState } = await import('../js/state.js');
   const s = normalizeState({ ...defaultState(), missing: ['leche', 'Pan '], inStock: ['leche', 'arroz', 'pan'], settings: { ...defaultState().settings, pantryMode: 'manual' } });
