@@ -394,8 +394,9 @@ button.chip[aria-pressed='true'] {
   animation: pantry-done-in 0.25s ease-out;
 }
 
-.pantry-done[hidden] {
-  display: none;
+.pantry-done[hidden],
+.view-pantry:has(#pantry-search:focus) .pantry-done {
+  display: none; /* also while typing a search: with the keyboard up it would cover the results */
 }
 
 .pantry-done .btn {

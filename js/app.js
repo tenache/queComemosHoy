@@ -161,7 +161,7 @@ const ui = {
   pantryUndo: null, // {kind: 'all' | 'nothing' | 'bought', before, until}: the bulk action that can be taken back for a while
   shopRows: null, // the list's rows in the order shown: bought ones stay crossed out until you leave it
   shopAdd: '', // what's typed in the list's add box
-  pantryEdits: 0, // changes made in Qué tengo since coming to Despensa: from PANTRY_DONE_AFTER on, "Listo, ¿qué cocinamos?" shows
+  pantryStart: null, // Map ingredient → status when you came to Despensa: from PANTRY_DONE_AFTER changed ones on, "Listo, ¿qué cocinamos?" shows
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1077,18 +1077,36 @@ const PANTRY_UNDO_MS = 20_000;
 // After this many changes in Qué tengo, "Listo, ¿qué cocinamos?" offers to go to the cards (like the wheel's "¿Y si cocinamos?").
 const PANTRY_DONE_AFTER = 2;
 
-/** One more change in Qué tengo (`n`: a bulk "Tengo todo" counts as enough at once); shows the button when it's time. */
-function pantryEdited(n = 1) {
-  ui.pantryEdits += n;
-  const done = document.querySelector('.pantry-done');
-  if (done) done.hidden = ui.pantryEdits < PANTRY_DONE_AFTER;
+const pantrySnapshot = () => new Map(allIngredients(state).map((n) => [n, pantryStatus(state, n)]));
+
+/** Enough ingredients differ from when you came (a tap and its undo don't count): time for "Listo, ¿qué cocinamos?". */
+function pantryDoneDue() {
+  const start = ui.pantryStart ?? new Map();
+  let changed = 0;
+  for (const n of allIngredients(state)) if (pantryStatus(state, n) !== start.get(n) && ++changed >= PANTRY_DONE_AFTER) return true;
+  return false;
 }
 
-/** "Listo, ¿qué cocinamos?": to Hoy, with a card drawn again for what's in the pantry now. */
+/** Shows or hides the button after a change made in place (a chip tap). */
+function pantryEdited() {
+  const done = document.querySelector('.pantry-done');
+  if (done) done.hidden = !pantryDoneDue();
+}
+
+/**
+ * "Listo, ¿qué cocinamos?": to Hoy. The card you were deciding on stays,
+ * unless it now lacks something: then a new one is drawn for the pantry
+ * as it is now (or just a new side, if only the side lacks something).
+ */
 function doneWithPantry() {
-  if (!ui.cooked) {
-    ui.currentId = null; // drawn again by ensureCurrent(), now that the pantry changed
+  const main = dishById(ui.currentId);
+  const side = dishById(ui.sideId);
+  const lacks = (dish) => Boolean(dish && dish.ingredients.some((i) => isMissing(state, i)));
+  if (!ui.cooked && (!main || lacks(main))) {
+    ui.currentId = null; // drawn again by ensureCurrent()
     ui.sideFor = null;
+  } else if (!ui.cooked && lacks(side) && ui.pinnedSide !== side.id) {
+    ui.sideFor = null; // a new side, same main
   }
   switchTab('today');
 }
@@ -1120,8 +1138,8 @@ function bulkPantry(kind) {
   const n = state.missing.length;
   if (kind === 'all' && n > 0 && !window.confirm(n === 1 ? t('pantryAllConfirmOne', { name: state.missing[0] }) : t('pantryAllConfirm', { n }))) return;
   const before = BULK[kind].apply(state);
-  // "Tengo todo" is a whole pantry at once; after "No tengo nada" you still have to tick what you have.
-  if (kind === 'all') ui.pantryEdits += PANTRY_DONE_AFTER;
+  // After "No tengo nada" you still have to tick what you have: count from there.
+  if (kind === 'nothing') ui.pantryStart = pantrySnapshot();
   const undo = { kind, before, since: Date.now(), until: Date.now() + PANTRY_UNDO_MS };
   ui.pantryUndo = undo;
   setTimeout(() => {
@@ -1304,7 +1322,6 @@ function viewPantryHave() {
     if (names.length === 0) return;
     mark(state, names);
     addIngredients(state, names);
-    ui.pantryEdits += 1;
     endPantryUndo(); // marked by hand, as a chip tap: a Deshacer would undo it too
     // Show what was added: the one name, or (several) everything.
     ui.pantrySearch = names.length === 1 ? names[0] : '';
@@ -1342,7 +1359,7 @@ function viewPantryHave() {
     // Floats over the bottom of the page, above the tabs: showing it moves nothing.
     h(
       'div',
-      { class: 'pantry-done', hidden: ui.pantryEdits < PANTRY_DONE_AFTER },
+      { class: 'pantry-done', hidden: !pantryDoneDue() },
       button(`🍳 ${t('pantryDone')}`, doneWithPantry, 'primary', { onpointerdown: (e) => document.activeElement?.id === 'pantry-search' && e.preventDefault() }),
     ),
   ];
@@ -2735,7 +2752,7 @@ const TABS = [
 
 function switchTab(tab) {
   if (tab !== ui.tab) ui.shopRows = null; // Despensa: rows bought go when you leave the list
-  if (tab === 'pantry' && ui.tab !== 'pantry') ui.pantryEdits = 0;
+  if (tab === 'pantry' && ui.tab !== 'pantry') ui.pantryStart = pantrySnapshot();
   ui.tab = tab;
   ui.editing = null;
   wheelView.close();
