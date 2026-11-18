@@ -258,10 +258,97 @@ button.chip[aria-pressed='true'] {
   background: color-mix(in srgb, var(--cart) 16%, var(--surface));
 }
 
-.chip.pantry.unknown {
+/* Despensa (#42): every mark the same width, so a tap never moves another chip. */
+.chip-mark {
+  display: inline-block;
+  width: 1.3em;
+  margin-left: -0.2em;
+  text-align: center;
+}
+
+.chip.pantry.none {
   color: var(--muted);
   border-style: dashed;
   border-color: var(--line);
+}
+
+.chip.pantry[hidden] {
+  display: none;
+}
+
+/* "Qué tengo" and "Lista de compras": the same size whatever the count, so marking changes nothing above the chips. */
+.pantry-switch {
+  display: flex;
+  align-self: stretch;
+}
+
+.pantry-switch button {
+  flex: 1;
+  white-space: nowrap;
+}
+
+/* Search and the bulk buttons stay in view while scrolling the chips. */
+.pantry-bar {
+  position: sticky;
+  top: env(safe-area-inset-top);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 -16px;
+  padding: 8px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.search-row {
+  position: relative;
+}
+
+.search-row input {
+  padding-right: 48px;
+}
+
+/* No browser ✕: ours is the same everywhere. */
+.search-row input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search-clear {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 46px;
+  min-height: 46px;
+  padding: 0;
+}
+
+.search-clear[hidden],
+.pantry-add[hidden],
+.pantry-none[hidden] {
+  display: none;
+}
+
+.pantry-bulk {
+  display: flex;
+  gap: 8px;
+}
+
+.pantry-bulk .btn {
+  flex: 1;
+  min-width: 0;
+}
+
+.pantry-add {
+  align-self: flex-start;
+  color: var(--text);
+  text-align: left;
+}
+
+/* Bought: crossed out where it was, until you leave the list. */
+.shop-row.bought span {
+  text-decoration: line-through;
+  color: var(--muted);
 }
 
 /* ---- Today: variety, card, actions ---- */
@@ -725,6 +812,7 @@ select {
 /* ---- Forms ---- */
 
 input[type='text'],
+input[type='search'],
 input[type='number'] {
   width: 100%;
   min-height: 46px;

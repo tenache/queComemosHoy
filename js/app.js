@@ -8,10 +8,15 @@ import {
   PORTIONS,
   allIngredients,
   allMains,
+  boughtAll,
   cleanDish,
   cleanNames,
   cleanRecipe,
   favoriteCount,
+  hasEverything,
+  hasNothing,
+  haveEverything,
+  haveNothing,
   isMissing,
   logAfterMeal,
   logCardAction,
@@ -19,9 +24,13 @@ import {
   markMissing,
   moodToday,
   normalizeState,
+  pantryStatus,
   planUndo,
   setFavorites,
   setMood,
+  togglePantry,
+  undoBoughtAll,
+  undoPantry,
   splitMissing,
   toggleFavorite,
   undoCardAction,
@@ -145,6 +154,11 @@ const ui = {
   keepCard: null, // the dish put on the card from Amigos (#40): the mood question, if it shows then, leaves it there
   pickerScroll: 0, // where the list was scrolled when its 💞 was tapped: closing who picked goes back there
   groupInvited: null, // the code of the group whose invitation was copied ("Copiar")
+  // Despensa (#42)
+  pantryView: 'have', // 'have' (🧺 Qué tengo) or 'list' (🛒 Lista de compras)
+  pantrySearch: '', // what's typed in the search
+  pantryUndo: null, // {kind: 'all' | 'nothing' | 'bought', before, until}: the bulk action that can be taken back for a while
+  shopRows: null, // the list's rows in the order shown: bought ones stay crossed out until you leave it
 };
 
 const $ = (id) => document.getElementById(id);
@@ -221,12 +235,17 @@ const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce
 // ---- State plumbing -----------------------------------------------------
 
 function commit() {
-  if (ui.readOnly) return render();
+  save();
+  render();
+}
+
+/** Saves the state (unless this copy is read-only), warning once if it can't. commit() also redraws. */
+function save() {
+  if (ui.readOnly) return;
   if (!saveState(state) && !ui.saveWarned) {
     ui.saveWarned = true;
     addBanner('save', t('storageSaveFailed'));
   }
-  render();
 }
 
 function addBanner(id, text, { actionLabel, action, sticky = false } = {}) {
@@ -1047,64 +1066,272 @@ function viewDishForm() {
   ];
 }
 
-function viewPantry() {
+// ---- Despensa (#42) ------------------------------------------------------
+
+// How long "Deshacer" stays on a bulk button.
+const PANTRY_UNDO_MS = 20_000;
+
+/** For search: lowercase, no accents ("Azúcar" → "azucar"). */
+const searchKey = (text) => String(text).normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').trim();
+
+const PANTRY_MARK = { have: '✓', out: '🛒', none: '✗' };
+
+/** The bulk action that can still be taken back, if any. */
+function pantryUndoFor(kind) {
+  const undo = ui.pantryUndo;
+  return undo && undo.kind === kind && Date.now() < undo.until ? undo : null;
+}
+
+/** A bulk action: done now, "Deshacer" on its button for PANTRY_UNDO_MS. */
+function bulkPantry(kind, apply) {
+  const before = apply(state);
+  const undo = { kind, before, until: Date.now() + PANTRY_UNDO_MS };
+  ui.pantryUndo = undo;
+  setTimeout(() => {
+    if (ui.pantryUndo !== undo) return;
+    ui.pantryUndo = null;
+    if (ui.tab === 'pantry') redrawPantryKeepingFocus();
+  }, PANTRY_UNDO_MS + 50);
+  commit();
+}
+
+function undoBulkPantry(kind) {
+  const undo = pantryUndoFor(kind);
+  if (!undo) return;
+  if (kind === 'bought') undoBoughtAll(state, undo.before);
+  else undoPantry(state, undo.before);
+  ui.pantryUndo = null;
+  commit();
+}
+
+/** A bulk button, or its "↩ Deshacer" while the action can be taken back. */
+function bulkButton(kind, label, apply, done) {
+  if (pantryUndoFor(kind)) {
+    return button(`↩ ${t('undo')}`, () => undoBulkPantry(kind), 'bulk', { 'aria-label': t('pantryUndoOf', { action: label }) });
+  }
+  return button(label, () => bulkPantry(kind, apply), 'bulk', done ? { disabled: true, title: t('pantryAlready') } : {});
+}
+
+/** Redraws Despensa without losing the search box's focus and cursor (a redraw replaces it). */
+function redrawPantryKeepingFocus() {
+  const search = document.activeElement?.matches?.('#pantry-search') ? document.activeElement : null;
+  const caret = search?.selectionStart;
+  render();
+  if (search) {
+    const again = $('pantry-search');
+    again?.focus({ preventScroll: true });
+    if (again && caret != null) again.setSelectionRange(caret, caret);
+  }
+}
+
+/** The counts Despensa shows, kept current after a tap without a redraw. */
+function updatePantryCounts() {
+  const names = allIngredients(state);
+  const have = names.filter((n) => pantryStatus(state, n) === 'have').length;
+  const summary = document.querySelector('.pantry-summary');
+  if (summary) summary.textContent = t('pantrySummary', { have, total: names.length });
+  const listButton = document.querySelector('.pantry-switch [data-view="list"]');
+  if (listButton) listButton.textContent = t('pantryListView', { n: state.missing.length });
+  renderTabs();
+}
+
+/** One ingredient chip. A tap changes it in place: nothing else on the page moves, and the search keeps its text. */
+function pantryChip(name) {
+  const chip = h('button', {
+    type: 'button',
+    'data-key': searchKey(name),
+    onclick: () => {
+      togglePantry(state, name);
+      save();
+      paint();
+      updatePantryCounts();
+      // The bulk buttons may be "already done" now, or not any more.
+      const all = document.querySelector('.pantry-bulk [data-kind="all"]');
+      const nothing = document.querySelector('.pantry-bulk [data-kind="nothing"]');
+      if (all && !pantryUndoFor('all')) all.disabled = hasEverything(state);
+      if (nothing && !pantryUndoFor('nothing')) nothing.disabled = hasNothing(state);
+    },
+  });
+  const paint = () => {
+    const status = pantryStatus(state, name);
+    chip.className = `chip pantry ${status}`;
+    chip.setAttribute('aria-pressed', String(status === 'have'));
+    chip.setAttribute('aria-label', `${name}: ${t(`pantryStatus:${status}`)}`);
+    chip.replaceChildren(h('span', { class: 'chip-mark', 'aria-hidden': 'true' }, PANTRY_MARK[status]), name);
+  };
+  paint();
+  return chip;
+}
+
+/** Shows only the chips that match the search, and offers to add what isn't there. In place, so the keyboard stays up. */
+function filterPantry() {
+  const q = searchKey(ui.pantrySearch);
+  let shown = 0;
+  let exact = false;
+  for (const chip of document.querySelectorAll('.pantry-chips .chip')) {
+    const match = chip.dataset.key.includes(q);
+    chip.hidden = !match;
+    if (match) shown++;
+    if (chip.dataset.key === q) exact = true;
+  }
+  const none = document.querySelector('.pantry-none');
+  if (none) none.hidden = shown > 0;
+  const add = document.querySelector('.pantry-add');
+  if (add) {
+    const name = cleanNames([ui.pantrySearch])[0];
+    add.hidden = !name || exact;
+    if (name) add.textContent = t('pantryAddToList', { name });
+  }
+  const clear = document.querySelector('.search-clear');
+  if (clear) clear.hidden = q === '';
+}
+
+function viewPantryHave() {
   const manual = state.settings.pantryMode === 'manual';
-  const addInput = h('input', { type: 'text', placeholder: t('addItemPlaceholder'), 'aria-label': t('addItemPlaceholder'), autocomplete: 'off', autocapitalize: 'none' });
+  const search = h('input', {
+    id: 'pantry-search',
+    type: 'search',
+    value: ui.pantrySearch,
+    placeholder: t('pantrySearch'),
+    'aria-label': t('pantrySearch'),
+    autocomplete: 'off',
+    autocapitalize: 'none',
+    enterKeyHint: 'search',
+    oninput: (e) => {
+      ui.pantrySearch = e.target.value;
+      filterPantry();
+    },
+    onkeydown: (e) => {
+      if (e.key === 'Enter') e.target.blur(); // closes the phone's keyboard, to see the chips
+    },
+  });
+  const clear = button('✕', () => {
+    ui.pantrySearch = '';
+    search.value = '';
+    filterPantry();
+    search.focus();
+  }, 'search-clear ghost', { 'aria-label': t('pantrySearchClear') });
+  const addToList = button('', () => {
+    const name = cleanNames([ui.pantrySearch])[0];
+    if (!name) return;
+    markMissing(state, [name]);
+    redrawAfter(commit);
+  }, 'pantry-add ghost');
+
+  const names = allIngredients(state);
+  const have = names.filter((n) => pantryStatus(state, n) === 'have').length;
+  const view = [
+    h(
+      'div',
+      { class: 'pantry-bar' },
+      h('div', { class: 'search-row' }, search, clear),
+      h(
+        'div',
+        { class: 'pantry-bulk' },
+        bulkButton('all', `✓ ${t('pantryHaveAll')}`, haveEverything, hasEverything(state)),
+        bulkButton('nothing', `✗ ${t('pantryHaveNothing')}`, haveNothing, hasNothing(state)),
+      ),
+    ),
+    h('p', { class: 'help' }, h('span', { class: 'pantry-summary' }, t('pantrySummary', { have, total: names.length })), ' ', manual ? t('pantryTapManual') : t('pantryTapLazy')),
+    h('div', { class: 'chips pantry-chips' }, names.map(pantryChip)),
+    h('p', { class: 'muted pantry-none', hidden: true }, t('pantryNoMatch')),
+    addToList,
+  ];
+  // Mark the bulk buttons, for the in-place updates after a tap.
+  const [all, nothing] = view[0].querySelectorAll('.pantry-bulk button');
+  all.dataset.kind = 'all';
+  nothing.dataset.kind = 'nothing';
+  return view;
+}
+
+/** Runs a change that redraws (commit), keeping the search box's focus. */
+function redrawAfter(change) {
+  const focused = document.activeElement?.matches?.('#pantry-search');
+  change();
+  if (focused) $('pantry-search')?.focus({ preventScroll: true });
+}
+
+function viewPantryList() {
+  // The rows in the order first shown; bought ones stay, crossed out, until you leave the list.
+  ui.shopRows = [...new Set([...(ui.shopRows ?? []), ...state.missing])];
+  const ingredients = allIngredients(state);
+  const addInput = h('input', {
+    type: 'text',
+    placeholder: t('addItemPlaceholder'),
+    'aria-label': t('addItemPlaceholder'),
+    autocomplete: 'off',
+    autocapitalize: 'none',
+    enterKeyHint: 'done',
+  });
+  addInput.setAttribute('list', 'shop-suggestions'); // `list` is read-only as a property
   const addItem = (e) => {
     e.preventDefault();
     const names = splitList(addInput.value);
     if (names.length === 0) return;
     markMissing(state, names);
     commit();
+    document.querySelector('.add-row input')?.focus(); // to add another
   };
-
+  const anyBought = ui.shopRows.some((n) => !state.missing.includes(n));
   return [
-    h('header', { class: 'top' }, h('h1', null, t('shoppingTitle'))),
-    state.missing.length === 0
-      ? h('p', { class: 'muted' }, t('shoppingEmpty'))
-      : h(
-          'ul',
-          { class: 'list' },
-          state.missing.map((name) =>
-            h(
-              'li',
-              { class: 'shop-row' },
-              h('span', null, name),
-              button(`✓ ${t('bought')}`, () => {
-                markInStock(state, [name]);
-                commit();
-              }, 'small'),
-            ),
-          ),
-        ),
     h('form', { class: 'add-row', onsubmit: addItem }, addInput, h('button', { type: 'submit', class: 'btn' }, t('add'))),
-    h('h2', { class: 'section' }, t('pantryTitle')),
-    h('p', { class: 'help' }, manual ? t('pantryHelpManual') : t('pantryHelpLazy')),
+    h('datalist', { id: 'shop-suggestions' }, ingredients.filter((n) => !state.missing.includes(n)).map((n) => h('option', { value: n }))),
+    ui.shopRows.length === 0
+      ? h('p', { class: 'muted' }, t('shoppingEmpty'))
+      : [
+          h(
+            'ul',
+            { class: 'list' },
+            ui.shopRows.map((name) => {
+              const bought = !state.missing.includes(name);
+              return h(
+                'li',
+                { class: bought ? 'shop-row bought' : 'shop-row' },
+                h('span', null, name),
+                bought
+                  ? button(`↩ ${t('undo')}`, () => {
+                      markMissing(state, [name]);
+                      commit();
+                    }, 'small', { 'aria-label': t('shopUnbuy', { name }) })
+                  : button(`✓ ${t('bought')}`, () => {
+                      markInStock(state, [name]);
+                      commit();
+                    }, 'small', { 'aria-label': t('shopBuy', { name }) }),
+              );
+            }),
+          ),
+          h(
+            'div',
+            { class: 'pantry-bulk' },
+            pantryUndoFor('bought')
+              ? button(`↩ ${t('undo')}`, () => undoBulkPantry('bought'), 'bulk', { 'aria-label': t('pantryUndoOf', { action: t('shopBoughtAll') }) })
+              : button(`✓ ${t('shopBoughtAll')}`, () => bulkPantry('bought', boughtAll), 'bulk', state.missing.length === 0 ? { disabled: true } : {}),
+          ),
+          anyBought && h('p', { class: 'help' }, t('shopBoughtHelp')),
+        ],
+  ];
+}
+
+function setPantryView(view) {
+  if (ui.pantryView === view) return;
+  ui.pantryView = view;
+  ui.shopRows = null;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function viewPantry() {
+  return [
+    h('header', { class: 'top' }, h('h1', null, t('pantryTitle'))),
     h(
       'div',
-      { class: 'chips' },
-      allIngredients(state).map((name) => {
-        const onList = state.missing.includes(name);
-        const have = manual ? state.inStock.includes(name) : !onList;
-        const status = have ? 'have' : onList ? 'out' : 'unknown';
-        return h(
-          'button',
-          {
-            type: 'button',
-            class: `chip pantry ${status}`,
-            'aria-pressed': String(have),
-            'aria-label': `${name}: ${have ? t('have') : t('missing')}`,
-            onclick: () => {
-              if (have) markMissing(state, [name]);
-              else markInStock(state, [name]);
-              commit();
-            },
-          },
-          h('span', { 'aria-hidden': 'true' }, have ? '✓ ' : onList ? '🛒 ' : ''),
-          name,
-        );
-      }),
+      { class: 'segmented pantry-switch', role: 'group', 'aria-label': t('pantryTitle') },
+      [
+        ['have', t('pantryHaveView')],
+        ['list', t('pantryListView', { n: state.missing.length })],
+      ].map(([v, text]) => h('button', { type: 'button', 'data-view': v, 'aria-pressed': String(ui.pantryView === v), onclick: () => setPantryView(v) }, text)),
     ),
+    ui.pantryView === 'list' ? viewPantryList() : viewPantryHave(),
   ];
 }
 
@@ -2398,6 +2625,7 @@ const TABS = [
 ];
 
 function switchTab(tab) {
+  if (tab !== ui.tab) ui.shopRows = null; // Despensa: rows bought go when you leave the list
   ui.tab = tab;
   ui.editing = null;
   wheelView.close();
@@ -2425,6 +2653,21 @@ function renderBanners() {
   );
 }
 
+/** The tab bar. Despensa redraws it alone after a tap, for its count. */
+function renderTabs() {
+  $('tabs').replaceChildren(
+    ...TABS.map(([id, icon, label]) =>
+      h(
+        'button',
+        { type: 'button', class: 'tab', 'aria-current': id === ui.tab ? 'page' : null, onclick: () => switchTab(id) },
+        h('span', { class: 'tab-icon', 'aria-hidden': 'true' }, icon),
+        h('span', { class: 'tab-label' }, t(label)),
+        id === 'pantry' && state.missing.length > 0 && h('span', { class: 'count' }, String(state.missing.length)),
+      ),
+    ),
+  );
+}
+
 function render() {
   if (ui.afterMeal && !dishById(ui.afterMeal.dishId)) ui.afterMeal = null;
   if (ui.sheet && !dishById(ui.sheet.dishId)) ui.sheet = null;
@@ -2445,17 +2688,8 @@ function render() {
   main.className = `view view-${ui.tab}`;
   main.replaceChildren(...[view()].flat(Infinity).filter(Boolean));
 
-  $('tabs').replaceChildren(
-    ...TABS.map(([id, icon, label]) =>
-      h(
-        'button',
-        { type: 'button', class: 'tab', 'aria-current': id === ui.tab ? 'page' : null, onclick: () => switchTab(id) },
-        h('span', { class: 'tab-icon', 'aria-hidden': 'true' }, icon),
-        h('span', { class: 'tab-label' }, t(label)),
-        id === 'pantry' && state.missing.length > 0 && h('span', { class: 'count' }, String(state.missing.length)),
-      ),
-    ),
-  );
+  renderTabs();
+  if (ui.tab === 'pantry' && ui.pantryView === 'have') filterPantry(); // the search typed before a redraw
 
   const overlay = ui.afterMeal
     ? overlayAfterMeal()
