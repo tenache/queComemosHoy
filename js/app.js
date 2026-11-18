@@ -1380,7 +1380,7 @@ function closeFriends() {
  */
 function friendsShown() {
   const lists = currentGroupLists();
-  return JSON.stringify([state.settings.groups.length, lists.length, Boolean(listing), listsStale(lists), friendsByDay(lists, Date.now())]);
+  return JSON.stringify([state.settings.groups.length, lists.length, Boolean(listing), listsStale(lists), navigator.onLine, friendsByDay(lists, Date.now())]);
 }
 
 /** Some group's list wasn't fetched again for a while (offline, or the server failing). */
@@ -1390,7 +1390,10 @@ let friendsDrawn = null;
 /** A dish your friends picked, on the card in Hoy: unpinning a side it doesn't go with. */
 function showOnToday(dish) {
   const cooked = ui.cooked && dishById(ui.cooked.dishId);
-  if (cooked === dish) return switchTab('today'); // the dish you just logged: its "¡A cocinar!" stays, with Deshacer
+  if (cooked === dish) {
+    switchTab('today'); // the dish you just logged: its "¡A cocinar!" stays, with Deshacer
+    return focusToday();
+  }
   if (cooked && !window.confirm(t('friendsReplaceCooked', { cooked: cooked.name, name: dish.name }))) {
     document.activeElement?.blur(); // a tapped row keeps the focus, and would hold back the list's redraws
     return;
@@ -1408,8 +1411,12 @@ function showOnToday(dish) {
   ui.cooked = null;
   switchTab('today');
   if (!ui.mood) ui.keepCard = null; // only for a mood question showing now, not a later change from the chip
-  // Keyboard and screen readers land on what's showing: the mood question if it's due, else the card.
-  const title = document.querySelector('#overlay .sheet button') ?? document.querySelector('#view .card h2');
+  focusToday();
+}
+
+/** Keyboard and screen readers land on what Hoy shows: the mood question if it's due, else the card or "¡A cocinar!". */
+function focusToday() {
+  const title = document.querySelector('#overlay .sheet button') ?? document.querySelector('#view .card h2, #view h2');
   if (title && !title.matches('button')) title.tabIndex = -1;
   title?.focus();
 }
@@ -1484,7 +1491,7 @@ function viewFriends() {
   });
   const offline = navigator.onLine === false && h('p', { class: 'help' }, t('friendsOffline'));
   if (lists.length === 0) {
-    return [header, h('p', { class: 'muted' }, t(listing ? 'friendsLoading' : 'friendsNotLoaded')), !listing && offline, !listing && !ui.readOnly && retry];
+    return [header, h('p', { class: 'muted' }, t(listing ? 'friendsLoading' : 'friendsNotLoaded')), !listing && !ui.readOnly && retry];
   }
   // A list kept from a while ago: say when it's from.
   const oldest = Math.min(...lists.map((l) => l.time));
@@ -2584,6 +2591,10 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('online', () => {
   flushGroup();
   refreshGroupList();
+  if (ui.tab === 'friends' && !ui.afterMeal) render(); // "Sin conexión." goes
+});
+window.addEventListener('offline', () => {
+  if (ui.tab === 'friends' && !ui.afterMeal) render(); // "Sin conexión." shows
 });
 // The app can stay open for a long dinner decision: look again now and then,
 // and retry picks that a server error (5xx) or the rate limit held back.

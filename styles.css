@@ -821,8 +821,8 @@ input[type='number'] {
 
 .tab {
   position: relative;
-  flex: 1 1 auto; /* a longer label (Despensa) takes the spare width */
-  min-width: 0; /* five tabs (#40): with big text, the labels shrink instead of pushing the bar off the screen */
+  flex: 1 1 0; /* five even tabs (#40) */
+  min-width: 0; /* with big text, the labels shrink and cut with "…" instead of pushing the bar off the screen */
   max-width: 120px;
   height: var(--tabs-h);
   display: flex;
@@ -842,7 +842,7 @@ input[type='number'] {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: min(1em, 3.6vw);
+  font-size: min(1em, 3.3vw); /* "Despensa" whole in a fifth of 320 px */
 }
 
 .tab-icon {
