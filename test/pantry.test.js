@@ -128,3 +128,10 @@ test('boughtAll and undoBoughtAll, in both modes', () => {
     assert.deepEqual(s.inStock, ['arroz']);
   }
 });
+
+test('a name both on the list and in the pantry (old or imported data): the list wins, so the chip and the suggestions agree', async () => {
+  const { normalizeState } = await import('../js/state.js');
+  const s = normalizeState({ ...defaultState(), missing: ['leche', 'Pan '], inStock: ['leche', 'arroz', 'pan'], settings: { ...defaultState().settings, pantryMode: 'manual' } });
+  assert.deepEqual(s.inStock, ['arroz']);
+  for (const n of ['leche', 'pan', 'arroz']) assert.equal(pantryStatus(s, n) !== 'have', isMissing(s, n), n);
+});

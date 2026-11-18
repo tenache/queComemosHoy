@@ -347,7 +347,8 @@ export function normalizeState(input) {
     dishes,
     events,
     missing: cleanNames(raw.missing),
-    inStock: cleanNames(raw.inStock),
+    // Never on the list and in the pantry at once (#42): the list wins, as in markMissing.
+    inStock: cleanNames(raw.inStock).filter((n) => !cleanNames(raw.missing).includes(n)),
     settings: {
       pantryMode: PANTRY_MODES.includes(settings.pantryMode) ? settings.pantryMode : 'lazy',
       variety: VARIETIES.includes(settings.variety) ? settings.variety : 'medium',
