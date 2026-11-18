@@ -1095,6 +1095,8 @@ const BULK = {
 const UNDO_GUARD_MS = 500;
 
 function bulkPantry(kind) {
+  // "Tengo todo" also empties the shopping list: ask first, since the next tap on a chip ends its Deshacer.
+  if (kind === 'all' && state.missing.length > 0 && !window.confirm(t('pantryAllConfirm', { n: state.missing.length }))) return;
   const before = BULK[kind].apply(state);
   const undo = { kind, before, since: Date.now(), until: Date.now() + PANTRY_UNDO_MS };
   ui.pantryUndo = undo;
@@ -1214,23 +1216,24 @@ function pantryChip(name) {
 /** Shows only the chips that match the search, and offers to add what isn't there. In place, so the keyboard stays up. */
 function filterPantry() {
   const q = searchKey(ui.pantrySearch);
-  // "huevos" finds "huevo", "tomates" finds "tomate": the word without its plural ending too.
-  const stems = [...new Set([q, q.replace(/es$/, ''), q.replace(/s$/, '')])].filter((x) => x === q || x.length >= 3);
-  const same = (key) => stems.some((x) => key === x || key === `${x}s` || key === `${x}es`);
+  // Each word without its plural ending too: "huevos" finds huevo, "arroces" arroz, "cebollas moradas" cebolla morada.
+  const singular = q
+    .split(' ')
+    .map((w) => (w.length > 3 ? w.replace(/ces$/, 'z').replace(/(es|s)$/, '') : w))
+    .join(' ');
   let shown = 0;
-  let exact = false;
   for (const chip of document.querySelectorAll('.pantry-chips .chip')) {
-    const match = stems.some((x) => chip.dataset.key.includes(x));
+    const match = chip.dataset.key.includes(q) || chip.dataset.key.includes(singular);
     chip.hidden = !match;
     if (match) shown++;
-    if (q && same(chip.dataset.key)) exact = true;
   }
+  // Nothing matches: say so, and offer to add it (not while a match shows: "tom" while typing "tomate").
   const none = document.querySelector('.pantry-none');
   if (none) none.hidden = shown > 0;
   const add = document.querySelector('.pantry-add');
   if (add) {
     const names = splitList(ui.pantrySearch);
-    add.hidden = names.length === 0 || exact;
+    add.hidden = names.length === 0 || shown > 0;
     add.querySelector('.pantry-add-text').textContent = t('pantryAddNew', { name: names.join(', ') });
   }
   const clear = document.querySelector('.search-clear');
@@ -1268,7 +1271,12 @@ function viewPantryHave() {
     if (names.length === 0) return;
     mark(state, names);
     endPantryUndo(); // marked by hand, as a chip tap: a Deshacer would undo it too
+    // Show what was added: the one name, or (several) everything.
+    ui.pantrySearch = names.length === 1 ? names[0] : '';
     redrawAfter(commit);
+  };
+  const keepSearchFocus = (e) => {
+    if (document.activeElement?.id === 'pantry-search') e.preventDefault();
   };
   const addRow = h(
     'div',
@@ -1277,8 +1285,8 @@ function viewPantryHave() {
     h(
       'div',
       { class: 'row' },
-      button(`✓ ${t('pantryAddHave')}`, addNew(markInStock), 'small'),
-      button(`🛒 ${t('pantryAddToList')}`, addNew(markMissing), 'small'),
+      button(`✓ ${t('pantryAddHave')}`, addNew(markInStock), 'small', { onpointerdown: keepSearchFocus }),
+      button(`🛒 ${t('pantryAddToList')}`, addNew(markMissing), 'small', { onpointerdown: keepSearchFocus }),
     ),
   );
 
@@ -1293,9 +1301,9 @@ function viewPantryHave() {
       h('span', { class: 'pantry-summary' }, t('pantrySummary', { have, total: names.length })),
       h('span', { class: 'pantry-hint', 'data-view': 'have' }, pantryHint('have')),
     ),
-    addRow,
     h('div', { class: 'chips pantry-chips' }, names.map(pantryChip)),
     h('p', { class: 'muted pantry-none', hidden: true }, t('pantryNoMatch')),
+    addRow,
   ];
 }
 

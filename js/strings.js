@@ -192,6 +192,7 @@ const STRINGS = {
     pantryTapLazy: 'Tocá lo que te falta: va a la lista.',
     pantryAllDone: 'Listo: tenés todo.',
     pantryAllDoneList: 'Listo: tenés todo y la lista quedó vacía.',
+    pantryAllConfirm: '"Tengo todo" también vacía la lista de compras ({n}). ¿Seguir?',
     pantryNothingDone: 'Listo: no tenés nada. Tocá lo que tenés.',
     pantryTapManual: 'Tocá lo que tenés.',
     pantryNoMatch: 'Ningún ingrediente con ese nombre.',

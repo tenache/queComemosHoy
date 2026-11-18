@@ -356,6 +356,16 @@ button.chip[aria-pressed='true'] {
   text-overflow: ellipsis;
 }
 
+/* The hint can take two lines with big text, and always keeps room for two, so it never moves the chips. */
+.pantry-help .pantry-hint {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  min-height: 2.8em;
+  line-height: 1.4;
+  white-space: normal;
+}
+
 .pantry-add {
   display: flex;
   flex-direction: column;
