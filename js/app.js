@@ -1305,7 +1305,6 @@ async function refreshGroupList(force = false) {
   const shown = () => JSON.stringify(currentGroupLists().map((l) => [l.code, l.you, l.groupName, l.members]));
   const before = shown();
   const markBefore = ui.currentId && friendsPicks(currentGroupLists(), Date.now()).has(ui.currentId);
-  const friendsBefore = friendsShown();
   const friendsLoading = ui.tab === 'friends' && currentGroupLists().length === 0; // "Cargando…" until this ends, whatever the answer
   listing = Promise.all(due.map(async (group) => [group, await listGroup(group)]));
   let results;
@@ -1325,7 +1324,7 @@ async function refreshGroupList(force = false) {
   const moving = document.querySelector('.card.dragging, .card.flying');
   if (shown() !== before && canRedrawSettings()) render();
   else if (ui.tab === 'today' && markBefore !== markNow && !moving && !ui.picking) render();
-  else if (ui.tab === 'friends' && !ui.afterMeal && (friendsLoading || (friendsShown() !== friendsBefore && !focusInView()))) render();
+  else if (ui.tab === 'friends' && !ui.afterMeal && (friendsLoading || (friendsShown() !== friendsDrawn && !focusInView()))) render();
 }
 
 /** Someone is on a button or field of the page: a redraw would drop them back to the top. */
@@ -1366,12 +1365,28 @@ function closeFriends() {
 
 // ---- 💞 Amigos (#40) --------------------------------------------------------
 
-/** What the Amigos tab shows from the groups' lists, to redraw it only when that changed. */
-const friendsShown = () => JSON.stringify([state.settings.groups.length, currentGroupLists().length, friendsByDay(currentGroupLists(), Date.now())]);
+/**
+ * What the Amigos tab shows from the groups' lists. viewFriends() keeps what
+ * it drew, so a refresh redraws only when it would change, midnight included.
+ */
+function friendsShown() {
+  const lists = currentGroupLists();
+  return JSON.stringify([state.settings.groups.length, lists.length, Boolean(listing), listsStale(lists), friendsByDay(lists, Date.now())]);
+}
+
+/** Some group's list wasn't fetched again for a while (offline, or the server failing). */
+const listsStale = (lists) => lists.length > 0 && Date.now() - Math.min(...lists.map((l) => l.time)) > 2 * GROUP_REFRESH_MS;
+let friendsDrawn = null;
 
 /** A dish your friends picked, on the card in Hoy: unpinning a side it doesn't go with. */
 function showOnToday(dish) {
-  if (ui.pinnedSide && !mainCandidates(state.dishes, ui.pinnedSide).includes(dish)) ui.pinnedSide = null;
+  const cooked = ui.cooked && dishById(ui.cooked.dishId);
+  if (cooked && !window.confirm(t('friendsReplaceCooked', { cooked: cooked.name, name: dish.name }))) return;
+  const pinned = dishById(ui.pinnedSide);
+  if (pinned && !mainCandidates(state.dishes, pinned.id).includes(dish)) {
+    ui.pinnedSide = null;
+    addBanner('pin', t('friendsUnpinned', { side: pinned.name.toLocaleLowerCase('es'), name: dish.name }));
+  }
   ui.currentId = dish.id;
   ui.keepCard = dish.id;
   ui.sideFor = null;
@@ -1388,9 +1403,17 @@ function friendsRow({ dishId, names }) {
   const dish = dishById(dishId);
   const shown = dish ?? STARTER_DISHES.find((d) => d.id === dishId); // deleted on this phone: still say what it was
   const canShow = Boolean(dish && !dish.neverShow && mainCandidates(state.dishes).includes(dish));
+  // Why it can't go to Hoy: hidden has its badge; deleted, or not a main any more, a line.
+  const why = canShow || dish?.neverShow ? null : t(dish ? 'friendsNotAMain' : 'friendsDeleted');
   const content = [
     h('span', { class: 'list-emoji', style: `background:${gradientFor(shown)}`, 'aria-hidden': 'true' }, shown.emoji),
-    h('span', { class: 'list-text' }, h('span', { class: 'list-name' }, shown.name), h('span', { class: 'list-meta' }, listText(names))),
+    h(
+      'span',
+      { class: 'list-text' },
+      h('span', { class: 'list-name' }, shown.name),
+      h('span', { class: 'list-meta' }, listText(names)),
+      why && h('span', { class: 'list-meta' }, why),
+    ),
     dish?.neverShow && h('span', { class: 'badge' }, t('hidden')),
   ];
   return h(
@@ -1398,7 +1421,7 @@ function friendsRow({ dishId, names }) {
     null,
     canShow
       ? h('button', { type: 'button', class: 'list-row', 'aria-label': t(names.length > 1 ? 'friendsShowOnTodayMany' : 'friendsShowOnToday', { name: shown.name, who: listText(names) }), onclick: () => showOnToday(dish) }, ...content)
-      : h('div', { class: 'list-row' }, ...content),
+      : h('div', { class: 'list-row off' }, ...content),
   );
 }
 
@@ -1428,12 +1451,25 @@ function viewFriends() {
       ),
     ];
   }
+  friendsDrawn = friendsShown();
   const lists = currentGroupLists();
-  if (lists.length === 0) return [header, h('p', { class: 'muted' }, t(listing ? 'friendsLoading' : 'friendsNotLoaded'))];
+  const retry = button(t('friendsRetry'), () => {
+    refreshGroupList(true);
+    render();
+  });
+  if (lists.length === 0) {
+    return [header, h('p', { class: 'muted' }, t(listing ? 'friendsLoading' : 'friendsNotLoaded')), !listing && !ui.readOnly && retry];
+  }
+  // A list kept from a while ago: say when it's from.
+  const oldest = Math.min(...lists.map((l) => l.time));
+  const stale =
+    !listing &&
+    listsStale(lists) &&
+    h('p', { class: 'help' }, t('friendsStale', { when: new Date(oldest).toLocaleString(lang, { weekday: 'short', hour: '2-digit', minute: '2-digit' }) }), ' ', retry);
   const { today, yesterday } = friendsByDay(lists, Date.now());
-  if (today.length === 0 && yesterday.length === 0) return [header, h('p', { class: 'muted' }, t('friendsEmpty'))];
+  if (today.length === 0 && yesterday.length === 0) return [header, h('p', { class: 'muted' }, t('friendsEmpty')), stale];
   const day = (title, rows) => rows.length > 0 && [h('h2', { class: 'list-heading' }, title), h('ul', { class: 'list' }, rows.map(friendsRow))];
-  return [header, h('p', { class: 'help' }, t('friendsTabHelp')), day(t('friendsTodayTitle'), today), day(t('friendsYesterdayTitle'), yesterday)];
+  return [header, h('p', { class: 'help' }, t('friendsTabHelp')), stale, day(t('friendsTodayTitle'), today), day(t('friendsYesterdayTitle'), yesterday)];
 }
 
 function overlayFriends() {
@@ -2382,7 +2418,7 @@ function render() {
         'button',
         { type: 'button', class: 'tab', 'aria-current': id === ui.tab ? 'page' : null, onclick: () => switchTab(id) },
         h('span', { class: 'tab-icon', 'aria-hidden': 'true' }, icon),
-        h('span', null, t(label)),
+        h('span', { class: 'tab-label' }, t(label)),
         id === 'pantry' && state.missing.length > 0 && h('span', { class: 'count' }, String(state.missing.length)),
       ),
     ),

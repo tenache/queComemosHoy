@@ -822,6 +822,7 @@ input[type='number'] {
 .tab {
   position: relative;
   flex: 1;
+  min-width: 0; /* five tabs (#40): with big text, the labels shrink instead of pushing the bar off the screen */
   max-width: 120px;
   height: var(--tabs-h);
   display: flex;
@@ -834,6 +835,15 @@ input[type='number'] {
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--muted);
+}
+
+.tab-label {
+  max-width: 100%;
+  padding: 0 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: min(1em, 3.4vw);
 }
 
 .tab-icon {
@@ -1104,6 +1114,11 @@ input[type='number'] {
 .list-heading {
   font-size: 1.1rem;
   margin-top: 8px;
+}
+
+/* Amigos (#40): a dish that can't go to Hoy (deleted, or a side here), with a line saying why. */
+.list-row.off {
+  opacity: 0.6;
 }
 
 .list-row[aria-pressed='true'] {
