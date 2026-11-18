@@ -477,7 +477,7 @@ export const STARTER_RECIPES = {
     'Para la salsa, mezclá el resto del yogur con el tahini, jugo de limón y sal.',
     'Calentá las pitas y rellenalas con el pollo, la cebolla, el tomate y la salsa.',
   ]),
-  canelones: r(4, [x('fideos', 100, 'placas de canelones', 6.25), x('carne picada', 400, 'carne picada (de cerdo y de vaca)'), x('cebolla', 150, 'cebolla', 150), x('tomate triturado', 100, 'tomate triturado'), x('leche', 700, 'leche'), x('harina', 60, 'harina'), x('manteca', 60, 'manteca'), x('queso rallado', 40, 'queso rallado'), x('vino', 50, 'vino blanco'), x('aceite', 20, 'aceite de oliva'), s('nuez moscada y sal')], [
+  canelones: r(4, [x('fideos', 120, 'placas de canelones', 6), x('carne picada', 400, 'carne picada (de cerdo y de vaca)'), x('cebolla', 150, 'cebolla', 150), x('tomate triturado', 100, 'tomate triturado'), x('leche', 700, 'leche'), x('harina', 60, 'harina'), x('manteca', 60, 'manteca'), x('queso rallado', 40, 'queso rallado'), x('vino', 50, 'vino blanco'), x('aceite', 20, 'aceite de oliva'), s('nuez moscada y sal')], [
     'Rehogá la cebolla picada en el aceite 10 minutos, sumá la carne y dorala bien. Agregá el tomate y el vino y cociná 15 minutos. Dejá enfriar.',
     'Herví las placas en abundante agua con sal lo que diga el paquete (o hidratalas en agua caliente si son precocidas) y secalas sobre un repasador.',
     'Para la bechamel, derretí la manteca, sumá la harina y, de a poco, la leche, revolviendo hasta que espese. Nuez moscada y sal. Mezclá un cucharón con el relleno.',
