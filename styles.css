@@ -821,7 +821,7 @@ input[type='number'] {
 
 .tab {
   position: relative;
-  flex: 1;
+  flex: 1 1 auto; /* a longer label (Despensa) takes the spare width */
   min-width: 0; /* five tabs (#40): with big text, the labels shrink instead of pushing the bar off the screen */
   max-width: 120px;
   height: var(--tabs-h);
@@ -839,11 +839,10 @@ input[type='number'] {
 
 .tab-label {
   max-width: 100%;
-  padding: 0 2px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: min(1em, 3.4vw);
+  font-size: min(1em, 3.6vw);
 }
 
 .tab-icon {
@@ -1116,9 +1115,14 @@ input[type='number'] {
   margin-top: 8px;
 }
 
-/* Amigos (#40): a dish that can't go to Hoy (deleted, or a side here), with a line saying why. */
+/* Amigos (#40): a dish that can't go to Hoy (deleted, or a side here). Its picture and name dimmed; the line saying why stays readable. */
+.list-row.off .list-emoji,
+.list-row.off .list-name {
+  opacity: 0.55;
+}
+
 .list-row.off {
-  opacity: 0.6;
+  border-style: dashed;
 }
 
 .list-row[aria-pressed='true'] {

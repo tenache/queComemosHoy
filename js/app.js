@@ -235,6 +235,13 @@ function addBanner(id, text, { actionLabel, action, sticky = false } = {}) {
   renderBanners();
 }
 
+/** Takes a banner away (the 📌 one from Amigos goes on its own, or with the next card). */
+function dropBanner(id) {
+  if (!ui.banners.some((b) => b.id === id)) return;
+  ui.banners = ui.banners.filter((b) => b.id !== id);
+  renderBanners();
+}
+
 function downloadText(text, filename) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
   const link = h('a', { href: url, download: filename });
@@ -287,6 +294,7 @@ function pick(exclude = []) {
 
 function nextCard() {
   ui.keepCard = null;
+  dropBanner('pin');
   ui.currentId = pick(ui.currentId ? [ui.currentId] : [])?.id ?? null;
   ui.sideFor = null;
 }
@@ -378,6 +386,7 @@ function togglePin() {
   const side = dishById(ui.sideId);
   if (ui.pinnedSide) ui.pinnedSide = null;
   else if (side) ui.pinnedSide = side.id;
+  dropBanner('pin');
   render();
 }
 
@@ -1381,17 +1390,24 @@ let friendsDrawn = null;
 /** A dish your friends picked, on the card in Hoy: unpinning a side it doesn't go with. */
 function showOnToday(dish) {
   const cooked = ui.cooked && dishById(ui.cooked.dishId);
-  if (cooked && !window.confirm(t('friendsReplaceCooked', { cooked: cooked.name, name: dish.name }))) return;
+  if (cooked === dish) return switchTab('today'); // the dish you just logged: its "¡A cocinar!" stays, with Deshacer
+  if (cooked && !window.confirm(t('friendsReplaceCooked', { cooked: cooked.name, name: dish.name }))) {
+    document.activeElement?.blur(); // a tapped row keeps the focus, and would hold back the list's redraws
+    return;
+  }
   const pinned = dishById(ui.pinnedSide);
   if (pinned && !mainCandidates(state.dishes, pinned.id).includes(dish)) {
     ui.pinnedSide = null;
     addBanner('pin', t('friendsUnpinned', { side: pinned.name.toLocaleLowerCase('es'), name: dish.name }));
+    const banner = ui.banners.at(-1);
+    setTimeout(() => ui.banners.includes(banner) && dropBanner('pin'), 6000);
   }
   ui.currentId = dish.id;
   ui.keepCard = dish.id;
   ui.sideFor = null;
   ui.cooked = null;
   switchTab('today');
+  if (!ui.mood) ui.keepCard = null; // only for a mood question showing now, not a later change from the chip
   // Keyboard and screen readers land on what's showing: the mood question if it's due, else the card.
   const title = document.querySelector('#overlay .sheet button') ?? document.querySelector('#view .card h2');
   if (title && !title.matches('button')) title.tabIndex = -1;
@@ -1436,6 +1452,15 @@ function listText(names) {
   }
 }
 
+/** "hoy a las 19:37", "ayer a las 19:37", "el martes a las 19:37", by this phone's calendar. */
+function whenText(time) {
+  const d = new Date(time);
+  const now = new Date();
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86_400_000);
+  const day = days === 0 ? t('friendsToday') : days === 1 ? t('friendsYesterday') : t('friendsOnDay', { day: d.toLocaleDateString(lang, { weekday: 'long' }) });
+  return t('friendsAt', { day, time: d.toLocaleTimeString(lang, { hour: '2-digit', minute: '2-digit' }) });
+}
+
 function viewFriends() {
   const header = h('header', { class: 'top' }, h('h1', null, t('friendsTabTitle')));
   if (state.settings.groups.length === 0) {
@@ -1457,15 +1482,16 @@ function viewFriends() {
     refreshGroupList(true);
     render();
   });
+  const offline = navigator.onLine === false && h('p', { class: 'help' }, t('friendsOffline'));
   if (lists.length === 0) {
-    return [header, h('p', { class: 'muted' }, t(listing ? 'friendsLoading' : 'friendsNotLoaded')), !listing && !ui.readOnly && retry];
+    return [header, h('p', { class: 'muted' }, t(listing ? 'friendsLoading' : 'friendsNotLoaded')), !listing && offline, !listing && !ui.readOnly && retry];
   }
   // A list kept from a while ago: say when it's from.
   const oldest = Math.min(...lists.map((l) => l.time));
   const stale =
     !listing &&
     listsStale(lists) &&
-    h('p', { class: 'help' }, t('friendsStale', { when: new Date(oldest).toLocaleString(lang, { weekday: 'short', hour: '2-digit', minute: '2-digit' }) }), ' ', retry);
+    h('p', { class: 'help' }, t('friendsStale', { when: whenText(oldest) }), offline ? ` ${t('friendsOffline')}` : '', ' ', retry);
   const { today, yesterday } = friendsByDay(lists, Date.now());
   if (today.length === 0 && yesterday.length === 0) return [header, h('p', { class: 'muted' }, t('friendsEmpty')), stale];
   const day = (title, rows) => rows.length > 0 && [h('h2', { class: 'list-heading' }, title), h('ul', { class: 'list' }, rows.map(friendsRow))];
