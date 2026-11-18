@@ -100,6 +100,8 @@ test('the new foods: the recipe words find them, herbs with no amount are season
     botifarra: 'butifarra',
     'jamón serrano': 'jamon crudo',
     'jamón cocido': 'jamon',
+    'mejillón': 'mariscos',
+    'poroto seco': 'porotos secos',
     'piñones': 'pinones',
     'pasas de uva': 'pasas',
     'cuscús': 'cuscus',
@@ -110,7 +112,7 @@ test('the new foods: the recipe words find them, herbs with no amount are season
   };
   for (const [text, food] of Object.entries(cases)) assert.equal(matchFood(text), food, text);
   // Canned, shelled or boneless: not counted with the "as bought" values.
-  for (const text of ['sardinas en lata', 'almejas en lata', 'berberechos', 'cordero picado']) assert.equal(matchFood(text), null, text);
+  for (const text of ['sardinas en lata', 'almejas en lata', 'berberechos', 'cordero picado', 'chiles serranos']) assert.equal(matchFood(text), null, text);
 
   assert.deepEqual(parseItem('albahaca y sal'), { text: 'albahaca y sal' });
   assert.deepEqual(parseItem('perejil: 30 g'), { text: 'perejil', food: 'perejil', grams: 30 });
@@ -128,6 +130,7 @@ test('migration v7 → v8: an untouched phone ends up like a new install, histor
   const fresh = defaultState();
   for (const id of [...NEW_IN_V8, ...SIDES_IN_V8]) assert.deepEqual(byId(state.dishes, id), byId(fresh.dishes, id), `${id} as a new install has it`);
   assert.deepEqual(state.dishes.map((d) => d.id).sort(), fresh.dishes.map((d) => d.id).sort());
+  assert.deepEqual(state.dishes.slice(0, blob.dishes.length).map((d) => d.id), blob.dishes.map((d) => d.id), "the phone's dishes keep their place; the new ones go after");
   assert.deepEqual(state.cuisines, DEFAULT_CUISINES);
   assert.deepEqual(state.events.map((e) => e.dishId), ['paella'], 'the meals are still there');
 
@@ -227,6 +230,11 @@ test('migration v2 → v8: an old phone ends up with every new dish once', () =>
   assert.deepEqual(byId(state.dishes, 'falafel').sides, ['hummus', 'tabule', 'ensalada-griega']);
   assert.deepEqual(byId(state.dishes, 'tortilla-papas').sides, ['pan-tomate', 'ensalada-mixta']);
   assert.deepEqual(state.cuisines, DEFAULT_CUISINES);
+
+  // Their own pan con tomate on a v2 phone: tortilla points at it (v3 leaves tortilla's sides to v8).
+  const mine = normalizeState({ ...v2, dishes: [...v2.dishes, { id: 'mi-pan', name: 'Pan con tomate', emoji: '🍞', ingredients: [], mains: ['pan'], cookMinutes: 10, health: 3, yum: 3 }] });
+  assert.equal(byId(mine.dishes, 'pan-tomate'), undefined);
+  assert.deepEqual(byId(mine.dishes, 'tortilla-papas').sides, ['mi-pan', 'ensalada-mixta']);
 });
 
 test('the new dishes are starters, so friends see them (#23)', () => {

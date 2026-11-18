@@ -6,7 +6,7 @@ Seguro que te pasó: estás en la tuya, trabajando, estudiando, o viendo Tik Tok
 
 ## La app (v1)
 
-Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en el navegador, se puede instalar en la pantalla de inicio y funciona sin conexión. Ya trae unas 70 comidas caseras y 17 acompañamientos, entre ellos una tanda de cocina mediterránea (de España, Italia, Grecia, el Líbano, el norte de África y la Provenza), así que no hay que cargar nada para empezar.
+Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en el navegador, se puede instalar en la pantalla de inicio y funciona sin conexión. Ya trae unas 80 comidas caseras y 17 acompañamientos, entre ellos una tanda de cocina mediterránea (de España, Italia, Grecia, el Líbano, el norte de África y la Provenza), así que no hay que cargar nada para empezar.
 
 - **¿Cómo está nuestro cocinero hoy?** Una vez por día la app pregunta: con fiaca, apurado, con ganas de algo rico, de algo saludable o de algo distinto, o como siempre. Las sugerencias de ese día se acomodan a la respuesta (lo más fácil, lo más rápido, lo más rico, lo más sano, más variedad, o nada). Se cambia tocando el emoji al lado del título.
 - **Una tarjeta por vez.** Deslizá a la derecha (👉) si la cocinás, a la izquierda (👈) si hoy no, o tocá 🛒 si te falta algún ingrediente.

@@ -262,7 +262,8 @@ function migrateToV3(blob) {
       const { name: newName, ingredients, mains, cookMinutes, sides } = copyStarter(starter);
       return { ...dish, name: newName, ingredients, mains, cookMinutes, sides };
     }
-    if (name === starter.name) dish.sides = [...starter.sides];
+    // Sides that came with v8 (tortilla's pan con tomate) are v8's to give: giveSides finds the user's own.
+    if (name === starter.name) dish.sides = SIDES_IN_V8.includes(starter.id) ? [] : [...starter.sides];
     return dish;
   });
   blob.events = (Array.isArray(blob.events) ? blob.events : []).map((e) =>
@@ -292,6 +293,7 @@ function migrateToV3(blob) {
  * dish has it already) and, if it has no sides, the starter's. Pulled pork is
  * added, and "Árabe" joins the wheel. As in v3, a starter the user already has
  * under its name is theirs: sides point at theirs, and nothing is added twice.
+ * Names compare with nameKey (since #36: case, accents and spacing don't count).
  */
 function migrateToV6(blob) {
   const { names, local } = localDishes(blob.dishes);
