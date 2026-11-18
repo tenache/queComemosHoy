@@ -151,16 +151,15 @@ export function queueUnpick(group, pickId) {
 }
 
 /**
- * Who in your groups picked each dish today or yesterday, by this phone's
- * calendar, from the `list` answers {you, members, picks} of every group
- * (or one of them): Map dishId → [{member, name, today}], newest first, one
- * entry per friend. Groups make no difference (#33): a friend in two of
+ * Your friends' picks today or yesterday, by this phone's calendar, from the
+ * `list` answers {you, members, picks} of every group (or one of them):
+ * [{member, name, dishId, time, today}], newest first, one per friend and
+ * dish (their newest). Groups make no difference (#33): a friend in two of
  * your groups is one member id, so they count once, under the name of their
  * newest pick. Your own picks, picks of someone no longer in that group and
  * dishes that aren't starters are left out.
  */
-export function friendsPicks(lists, now) {
-  const out = new Map();
+function recentFriendPicks(lists, now) {
   const usable = (Array.isArray(lists) ? lists : [lists]).filter((l) => l && Array.isArray(l.members) && Array.isArray(l.picks));
   const picks = usable.flatMap((list) => {
     const names = new Map(list.members.map((m) => [m.id, m.name]));
@@ -169,14 +168,47 @@ export function friendsPicks(lists, now) {
   const d = new Date(now);
   const today = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const yesterday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1).getTime();
+  const out = [];
+  const seen = new Set();
   for (const pick of picks.sort((a, b) => b.time - a.time)) {
     if (!STARTER_IDS.has(pick.dishId) || !(pick.time >= yesterday)) continue;
-    const who = out.get(pick.dishId) ?? [];
-    if (who.some((w) => w.member === pick.member)) continue;
-    who.push({ member: pick.member, name: pick.name, today: pick.time >= today });
-    out.set(pick.dishId, who);
+    const key = JSON.stringify([pick.dishId, pick.member]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ member: pick.member, name: pick.name, dishId: pick.dishId, time: pick.time, today: pick.time >= today });
   }
   return out;
+}
+
+/**
+ * Who in your groups picked each dish today or yesterday (see
+ * recentFriendPicks): Map dishId → [{member, name, today}], newest first,
+ * one entry per friend. For the 💞 on the cards and the list.
+ */
+export function friendsPicks(lists, now) {
+  const out = new Map();
+  for (const { member, name, dishId, today } of recentFriendPicks(lists, now)) {
+    const who = out.get(dishId) ?? [];
+    who.push({ member, name, today });
+    out.set(dishId, who);
+  }
+  return out;
+}
+
+/**
+ * The 💞 Amigos tab (#40): what your friends picked, as {today, yesterday},
+ * each [{dishId, names}], the dish whose newest pick that day is newest
+ * first, and its friends newest first. A friend who picked a dish both days
+ * is under today only.
+ */
+export function friendsByDay(lists, now) {
+  const days = { today: new Map(), yesterday: new Map() };
+  for (const { name, dishId, today } of recentFriendPicks(lists, now)) {
+    const day = days[today ? 'today' : 'yesterday'];
+    if (!day.has(dishId)) day.set(dishId, { dishId, names: [] });
+    day.get(dishId).names.push(name);
+  }
+  return { today: [...days.today.values()], yesterday: [...days.yesterday.values()] };
 }
 
 /** friendsPicks() as counts, for the score: Map dishId → number of friends. */

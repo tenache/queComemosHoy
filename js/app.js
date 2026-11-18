@@ -34,6 +34,7 @@ import {
   flushQueue,
   formatCode,
   friendCounts,
+  friendsByDay,
   friendsPicks,
   isLocalHost,
   joinGroup,
@@ -47,6 +48,7 @@ import {
   renameGroup,
   shouldShare,
 } from './group.js';
+import { STARTER_DISHES } from './dishes.js';
 import { formatItem, itemAmount, mealMacros, parseItem } from './nutrition.js';
 import { recipeFor } from './recipes.js';
 import { STORAGE_KEY, loadState, readBackup, saveState } from './storage.js';
@@ -1301,6 +1303,7 @@ async function refreshGroupList(force = false) {
   const shown = () => JSON.stringify(currentGroupLists().map((l) => [l.code, l.you, l.groupName, l.members]));
   const before = shown();
   const markBefore = ui.currentId && friendsPicks(currentGroupLists(), Date.now()).has(ui.currentId);
+  const friendsBefore = friendsShown();
   listing = Promise.all(due.map(async (group) => [group, await listGroup(group)]));
   let results;
   try {
@@ -1319,6 +1322,7 @@ async function refreshGroupList(force = false) {
   const moving = document.querySelector('.card.dragging, .card.flying');
   if (shown() !== before && canRedrawSettings()) render();
   else if (ui.tab === 'today' && markBefore !== markNow && !moving && !ui.picking) render();
+  else if (ui.tab === 'friends' && friendsShown() !== friendsBefore) render();
 }
 
 /** Keeps a group's list answer, and the group's name as its members last set it. */
@@ -1352,6 +1356,65 @@ function closeFriends() {
   const item = list?.querySelector(`.pick-item[data-dish="${CSS.escape(dishId)}"]`);
   const back = list ? (item?.querySelector('.pick-mark') ?? item?.querySelector('.list-row')) : document.querySelector('.friends-mark');
   back?.focus({ preventScroll: true });
+}
+
+// ---- 💞 Amigos (#40) --------------------------------------------------------
+
+/** What the Amigos tab shows from the groups' lists, to redraw it only when that changed. */
+const friendsShown = () => JSON.stringify([state.settings.groups.length, currentGroupLists().length, friendsByDay(currentGroupLists(), Date.now())]);
+
+/** A dish your friends picked, on the card in Hoy: unpinning a side it doesn't go with. */
+function showOnToday(dish) {
+  if (ui.pinnedSide && !mainCandidates(state.dishes, ui.pinnedSide).includes(dish)) ui.pinnedSide = null;
+  ui.currentId = dish.id;
+  ui.sideFor = null;
+  ui.cooked = null;
+  switchTab('today');
+}
+
+/** One dish your friends picked: tapped, it goes to the card in Hoy (unless it can't be shown there). */
+function friendsRow({ dishId, names }) {
+  const dish = dishById(dishId);
+  const shown = dish ?? STARTER_DISHES.find((d) => d.id === dishId); // deleted on this phone: still say what it was
+  const canShow = Boolean(dish && !dish.neverShow && mainCandidates(state.dishes).includes(dish));
+  const content = [
+    h('span', { class: 'list-emoji', style: `background:${gradientFor(shown)}`, 'aria-hidden': 'true' }, shown.emoji),
+    h('span', { class: 'list-text' }, h('span', { class: 'list-name' }, shown.name), h('span', { class: 'list-meta' }, listText(names))),
+    dish?.neverShow && h('span', { class: 'badge' }, t('hidden')),
+  ];
+  return h(
+    'li',
+    null,
+    canShow
+      ? h('button', { type: 'button', class: 'list-row', 'aria-label': t(names.length > 1 ? 'friendsShowOnTodayMany' : 'friendsShowOnToday', { name: shown.name, who: listText(names) }), onclick: () => showOnToday(dish) }, ...content)
+      : h('div', { class: 'list-row' }, ...content),
+  );
+}
+
+/** "Nico", "Nico y Lucía", "Nico, Lucía e Inés" (Intl knows the "e"). */
+const listText = (names) => new Intl.ListFormat(lang, { type: 'conjunction' }).format(names);
+
+function viewFriends() {
+  const header = h('header', { class: 'top' }, h('h1', null, t('friendsTabTitle')));
+  if (state.settings.groups.length === 0) {
+    return [
+      header,
+      h(
+        'section',
+        { class: 'empty' },
+        h('div', { class: 'empty-emoji', 'aria-hidden': 'true' }, '💞'),
+        h('h2', null, t('friendsNoGroupTitle')),
+        h('p', null, t('friendsNoGroupText')),
+        button(t('friendsGoToSettings'), () => switchTab('settings'), 'primary'),
+      ),
+    ];
+  }
+  const lists = currentGroupLists();
+  if (lists.length === 0) return [header, h('p', { class: 'muted' }, t('friendsNotLoaded'))];
+  const { today, yesterday } = friendsByDay(lists, Date.now());
+  if (today.length === 0 && yesterday.length === 0) return [header, h('p', { class: 'muted' }, t('friendsEmpty'))];
+  const day = (title, rows) => rows.length > 0 && [h('h2', { class: 'list-heading' }, title), h('ul', { class: 'list' }, rows.map(friendsRow))];
+  return [header, h('p', { class: 'help' }, t('friendsTabHelp')), day(t('friendsTodayTitle'), today), day(t('friendsYesterdayTitle'), yesterday)];
 }
 
 function overlayFriends() {
@@ -2239,6 +2302,7 @@ const TABS = [
   ['today', '🍽️', 'tabToday', viewToday],
   ['dishes', '📖', 'tabDishes', viewDishes],
   ['pantry', '🛒', 'tabPantry', viewPantry],
+  ['friends', '💞', 'tabFriends', viewFriends],
   ['settings', '⚙️', 'tabSettings', viewSettings],
 ];
 
@@ -2246,7 +2310,7 @@ function switchTab(tab) {
   ui.tab = tab;
   ui.editing = null;
   wheelView.close();
-  if (tab === 'settings') refreshGroupList(true);
+  if (tab === 'settings' || tab === 'friends') refreshGroupList(true);
   if (tab === 'today') refreshGroupList();
   render();
   window.scrollTo(0, 0);
@@ -2410,7 +2474,7 @@ document.addEventListener('visibilitychange', () => {
   checkAfterMeal();
   // Back on a new day: render() asks how the cook is (only on Hoy, so an open dish form keeps what was typed).
   const moodDue = !ui.mood && ui.tab === 'today' && moodToday(state, Date.now()) === null;
-  if (ui.afterMeal !== before || moodDue) render();
+  if (ui.afterMeal !== before || moodDue || ui.tab === 'friends') render(); // Amigos: today may be yesterday now
 });
 
 document.addEventListener('keydown', (e) => {

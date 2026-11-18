@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { friendCounts, friendsPicks } from '../js/group.js';
+import { friendCounts, friendsByDay, friendsPicks } from '../js/group.js';
 import { applyParams, paramValue } from '../js/params.js';
 import { FRIENDS, friendsBoost, probabilities, scoreDish } from '../js/scoring.js';
 import { defaultState } from '../js/state.js';
@@ -126,4 +126,52 @@ test('probabilities: a dish three friends picked comes up about five times as of
   const p = (friends) => probabilities(state.dishes, { ...ctx, friends }).find((r) => r.dish.id === 'lentejas').p;
   const ratio = p(new Map([['lentejas', 3]])) / p(null);
   assert.ok(ratio > 3.5 && ratio < 5.1, `×${ratio.toFixed(2)}`); // e^1.63 ≈ 5.1, less once the others share
+});
+
+test('friendsByDay (#40): Hoy and Ayer, newest first, a friend who picked a dish both days only under Hoy', () => {
+  const picks = [
+    { member: 'nico', dishId: 'pizza', time: NOON - 30 * HOUR }, // yesterday, then again today: Hoy only
+    { member: 'nico', dishId: 'pizza', time: NOON - 2 * HOUR },
+    { member: 'lucia', dishId: 'pizza', time: NOON - 1 * HOUR },
+    { member: 'leo', dishId: 'paella', time: NOON - 3 * HOUR },
+    { member: 'lucia', dishId: 'paella', time: NOON - 20 * HOUR }, // yesterday evening: paella is under both days
+    { member: 'leo', dishId: 'milanesas-pure', time: NOON - 15 * HOUR }, // yesterday, later than Lucía's paella
+    { member: 'leo', dishId: 'ravioles-tuco', time: NOON - 40 * HOUR }, // the day before yesterday
+    { member: 'me', dishId: 'ravioles-tuco', time: NOON }, // mine
+    { member: 'nico', dishId: 'd-mine', time: NOON }, // not a starter dish
+  ];
+  assert.deepEqual(friendsByDay(list(picks), NOON), {
+    today: [
+      { dishId: 'pizza', names: ['Lucia', 'Nico'] },
+      { dishId: 'paella', names: ['Leo'] },
+    ],
+    yesterday: [
+      { dishId: 'milanesas-pure', names: ['Leo'] },
+      { dishId: 'paella', names: ['Lucia'] },
+    ],
+  });
+});
+
+test('friendsByDay: empty without lists, and a friend in two groups once (#33)', () => {
+  assert.deepEqual(friendsByDay(null, NOON), { today: [], yesterday: [] });
+  assert.deepEqual(friendsByDay([], NOON), { today: [], yesterday: [] });
+  const sol = { member: 'sol', dishId: 'pizza', time: NOON - HOUR };
+  const a = { you: 'me', members: [{ id: 'me', name: 'Yo' }, { id: 'sol', name: 'Sol' }], picks: [sol] };
+  const b = { you: 'me', members: [{ id: 'me', name: 'Yo' }, { id: 'sol', name: 'Sol' }], picks: [sol] };
+  assert.deepEqual(friendsByDay([a, b], NOON), { today: [{ dishId: 'pizza', names: ['Sol'] }], yesterday: [] });
+});
+
+test('friendsByDay agrees with friendsPicks: the same friends for each dish', () => {
+  const picks = [
+    { member: 'nico', dishId: 'pizza', time: NOON - 30 * HOUR },
+    { member: 'lucia', dishId: 'pizza', time: NOON - 1 * HOUR },
+    { member: 'leo', dishId: 'paella', time: NOON - 20 * HOUR },
+  ];
+  const byDay = friendsByDay(list(picks), NOON);
+  for (const [dishId, who] of friendsPicks(list(picks), NOON)) {
+    const today = byDay.today.find((d) => d.dishId === dishId)?.names ?? [];
+    const yesterday = byDay.yesterday.find((d) => d.dishId === dishId)?.names ?? [];
+    assert.deepEqual(today, who.filter((w) => w.today).map((w) => w.name));
+    assert.deepEqual(yesterday, who.filter((w) => !w.today).map((w) => w.name));
+  }
 });

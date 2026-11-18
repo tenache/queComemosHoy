@@ -10,6 +10,7 @@ const STRINGS = {
     tabToday: 'Hoy',
     tabDishes: 'Comidas',
     tabPantry: 'Despensa',
+    tabFriends: 'Amigos',
     tabSettings: 'Ajustes',
 
     // Suggestion card
@@ -243,6 +244,18 @@ const STRINGS = {
     friendsToday: 'hoy',
     friendsYesterday: 'ayer',
     friendsNone: 'Ya nadie lo eligió hoy ni ayer.',
+    // The 💞 Amigos tab (#40)
+    friendsTabTitle: '💞 Lo que eligieron tus amigos',
+    friendsTabHelp: 'Tocá un plato para verlo en Hoy.',
+    friendsTodayTitle: 'Hoy',
+    friendsYesterdayTitle: 'Ayer',
+    friendsShowOnToday: '{name}, lo eligió {who}. Ver en Hoy',
+    friendsShowOnTodayMany: '{name}, lo eligieron {who}. Ver en Hoy',
+    friendsEmpty: 'Nadie de tus grupos eligió nada hoy ni ayer.',
+    friendsNotLoaded: 'Todavía no pudimos ver tus grupos. Probá de nuevo con conexión.',
+    friendsNoGroupTitle: 'Todavía no estás en un grupo',
+    friendsNoGroupText: 'Creá un grupo o sumate a uno con un código, y acá ves lo que eligen tus amigos hoy y ayer.',
+    friendsGoToSettings: 'Ir a Ajustes',
 
     backup: 'Copia de seguridad',
     backupHelp:
