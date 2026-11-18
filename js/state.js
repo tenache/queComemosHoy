@@ -359,7 +359,7 @@ export function normalizeState(input) {
       params: cleanParams(settings.params),
       mood: cleanMood(settings.mood),
       groups: cleanGroups(settings.groups),
-      // Ingredients added by hand in Despensa (#42), so they stay listed when not had (also optional, no schema step).
+      // Ingredients added from Despensa's search (#42), so they stay listed when not had (also optional, no schema step).
       pantryAdded: cleanNames(settings.pantryAdded),
     },
     cuisines: cleanCuisines(raw.cuisines),
@@ -473,7 +473,7 @@ export function undoBoughtAll(state, names) {
   markMissing(state, names);
 }
 
-/** Ingredients added by hand (Despensa's search or the list's box): listed even when not had nor on the list. */
+/** Ingredients added from Despensa's search: listed even when not had nor on the list (the list's box doesn't: paper, batteries…). */
 export function addIngredients(state, names) {
   const added = state.settings.pantryAdded ?? (state.settings.pantryAdded = []);
   for (const n of cleanNames(names)) if (!added.includes(n)) added.push(n);

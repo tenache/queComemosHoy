@@ -1243,7 +1243,7 @@ function filterPantry() {
   const add = document.querySelector('.pantry-add');
   if (add) {
     const names = splitList(ui.pantrySearch);
-    add.hidden = names.length === 0 || exact || (shown > 0 && q.length < 3);
+    add.hidden = names.length === 0 || exact || q.length < 2; // "té" (two letters) can be added; one letter can't
     add.querySelector('.pantry-add-text').textContent = t('pantryAddNew', { name: names.join(', ') });
   }
   const clear = document.querySelector('.search-clear');
@@ -1346,7 +1346,6 @@ function viewPantryList() {
     const names = splitList(addInput.value);
     if (names.length === 0) return;
     markMissing(state, names);
-    addIngredients(state, names);
     ui.shopAdd = '';
     endPantryUndo();
     commit();
