@@ -1106,6 +1106,15 @@ function bulkPantry(kind) {
   commit();
 }
 
+/**
+ * A change by hand after a bulk action (a chip, the list, adding) ends its
+ * Deshacer: taking the bulk action back would quietly undo that change too.
+ * "Compré todo" only ends with a change on the list.
+ */
+function endPantryUndo({ list = true } = {}) {
+  if (ui.pantryUndo && (ui.pantryUndo.kind !== 'bought' || list)) ui.pantryUndo = null;
+}
+
 function undoBulkPantry(kind) {
   const undo = pantryUndoFor(kind);
   if (undo && Date.now() - undo.since < UNDO_GUARD_MS) return;
@@ -1145,7 +1154,7 @@ function refreshBulkButtons() {
 function pantryHint(view) {
   const undo = ui.pantryUndo && Date.now() < ui.pantryUndo.until ? ui.pantryUndo : null;
   if (view === 'list') return undo?.kind === 'bought' ? t('shopBoughtAllDone') : '';
-  if (undo?.kind === 'all') return t(undo.before.missing.length > 0 ? 'pantryAllDoneList' : 'pantryAllDone');
+  if (undo?.kind === 'all') return t(undo.before.bought.length > 0 ? 'pantryAllDoneList' : 'pantryAllDone');
   if (undo?.kind === 'nothing') return t('pantryNothingDone');
   return state.settings.pantryMode === 'manual' ? t('pantryTapManual') : t('pantryTapLazy');
 }
@@ -1184,8 +1193,7 @@ function pantryChip(name) {
     },
     onclick: () => {
       togglePantry(state, name);
-      // Marking by hand after "Tengo todo" / "No tengo nada" keeps that: a Deshacer would undo these taps too.
-      if (ui.pantryUndo?.kind !== 'bought') ui.pantryUndo = null;
+      endPantryUndo({ list: false }); // "Compré todo" can still be taken back: it only puts its names back on the list
       save();
       paint();
       updatePantryCounts();
@@ -1259,6 +1267,7 @@ function viewPantryHave() {
     const names = splitList(ui.pantrySearch);
     if (names.length === 0) return;
     mark(state, names);
+    endPantryUndo(); // marked by hand, as a chip tap: a Deshacer would undo it too
     redrawAfter(commit);
   };
   const addRow = h(
@@ -1319,6 +1328,7 @@ function viewPantryList() {
     if (names.length === 0) return;
     markMissing(state, names);
     ui.shopAdd = '';
+    endPantryUndo();
     commit();
     $('shop-add')?.focus(); // to add another
   };
@@ -1327,8 +1337,9 @@ function viewPantryList() {
     h('form', { class: 'add-row', onsubmit: addItem }, addInput, h('button', { type: 'submit', class: 'btn' }, t('add'))),
     h('datalist', { id: 'shop-suggestions' }, ingredients.filter((n) => !state.missing.includes(n)).map((n) => h('option', { value: n }))),
     // At the top, so it's in reach however long the list is; it and its line keep their size, so the rows never move.
-    ui.shopRows.length > 0 && h('div', { class: 'pantry-bulk' }, bulkButton('bought')),
-    ui.shopRows.length > 0 && h('p', { class: 'help pantry-help' }, h('span', { class: 'pantry-hint', 'data-view': 'list' }, pantryHint('list') || '\u00a0')),
+    // Also on an empty list while "Compré todo" can still be taken back (left and came back to it).
+    (ui.shopRows.length > 0 || pantryUndoFor('bought')) && h('div', { class: 'pantry-bulk' }, bulkButton('bought')),
+    (ui.shopRows.length > 0 || pantryUndoFor('bought')) && h('p', { class: 'help pantry-help' }, h('span', { class: 'pantry-hint', 'data-view': 'list' }, pantryHint('list') || '\u00a0')),
     ui.shopRows.length === 0
       ? h('p', { class: 'muted' }, t('shoppingEmpty'))
       : [
@@ -1344,10 +1355,12 @@ function viewPantryList() {
                 bought
                   ? button(`↩ ${t('undo')}`, () => {
                       markMissing(state, [name]);
+                      endPantryUndo();
                       commit();
                     }, 'small', { 'aria-label': t('shopUnbuy', { name }) })
                   : button(`✓ ${t('bought')}`, () => {
                       markInStock(state, [name]);
+                      endPantryUndo();
                       commit();
                     }, 'small', { 'aria-label': t('shopBuy', { name }) }),
               );

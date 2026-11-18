@@ -342,13 +342,14 @@ export function normalizeState(input) {
     .map(cleanEvent);
   const settings = raw.settings && typeof raw.settings === 'object' ? raw.settings : {};
 
+  const missing = cleanNames(raw.missing);
   return {
     schemaVersion: SCHEMA_VERSION,
     dishes,
     events,
-    missing: cleanNames(raw.missing),
+    missing,
     // Never on the list and in the pantry at once (#42): the list wins, as in markMissing.
-    inStock: cleanNames(raw.inStock).filter((n) => !cleanNames(raw.missing).includes(n)),
+    inStock: cleanNames(raw.inStock).filter((n) => !missing.includes(n)),
     settings: {
       pantryMode: PANTRY_MODES.includes(settings.pantryMode) ? settings.pantryMode : 'lazy',
       variety: VARIETIES.includes(settings.variety) ? settings.variety : 'medium',
@@ -421,7 +422,7 @@ export function togglePantry(state, name) {
 }
 
 /** What "Tengo todo" and "No tengo nada" change, to put it back with undoPantry(). */
-const pantryBefore = (state) => ({ pantryMode: state.settings.pantryMode, inStock: [...state.inStock], missing: [...state.missing] });
+const pantryBefore = (state) => ({ pantryMode: state.settings.pantryMode, inStock: [...state.inStock], bought: [] });
 
 /** Would "Tengo todo" / "No tengo nada" change anything? */
 export const hasEverything = (state) => state.settings.pantryMode === 'lazy' && state.missing.length === 0;
@@ -432,7 +433,7 @@ export const hasNothing = (state) => state.settings.pantryMode === 'manual' && s
  * missing: what was on the shopping list is bought. Returns the undo.
  */
 export function haveEverything(state) {
-  const before = pantryBefore(state);
+  const before = { ...pantryBefore(state), bought: [...state.missing] };
   state.settings.pantryMode = 'lazy';
   markInStock(state, state.missing);
   return before;
@@ -448,12 +449,13 @@ export function haveNothing(state) {
 
 /**
  * Takes back "Tengo todo" or "No tengo nada": the mode and the manual
- * pantry as they were, and what was on the shopping list back on it. A
+ * pantry as they were, and what "Tengo todo" took off the shopping list
+ * back on it (only that: a row marked Comprado since stays bought). A
  * name added to the list since stays on it, off the pantry.
  */
 export function undoPantry(state, before) {
   state.settings.pantryMode = PANTRY_MODES.includes(before.pantryMode) ? before.pantryMode : 'lazy';
-  markMissing(state, cleanNames(before.missing));
+  markMissing(state, cleanNames(before.bought));
   state.inStock = cleanNames(before.inStock).filter((n) => !state.missing.includes(n));
 }
 

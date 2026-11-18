@@ -104,6 +104,15 @@ test('undoPantry: a name put on the list since stays on it, off the pantry', () 
   assert.equal(pantryStatus(s, 'arroz'), 'out');
 });
 
+test('undoPantry after "No tengo nada" puts nothing back on the list: a row marked Comprado since stays off it', () => {
+  const s = stateWith('manual', { missing: ['leche', 'pan'], inStock: ['arroz'] });
+  const before = haveNothing(s);
+  togglePantry(s, 'leche'); // Comprado on the list
+  undoPantry(s, before);
+  assert.deepEqual(s.missing, ['pan']);
+  assert.deepEqual(s.inStock, ['arroz']);
+});
+
 test('undoPantry: a broken record falls back to lazy, never throws', () => {
   const s = stateWith('manual');
   undoPantry(s, { pantryMode: 'weird', inStock: null });
