@@ -90,7 +90,7 @@ afterEach(() => {
 
 test('a spin shows "Girando…", then the result that was picked before it started', async () => {
   const screen = openWheel();
-  Math.random = () => 0.9; // lands on the last cuisine
+  Math.random = () => 0.99; // lands on the last cuisine
   findButton(screen.tree, 'wheelSpin').props.onclick();
 
   assert.equal(screen.ui.wheel.spinning, true);
@@ -188,7 +188,7 @@ test('a re-render during a spin keeps the same wheel element', async () => {
 
 test('reduced motion: the result shows at once, with no timer', () => {
   const screen = openWheel({ reducedMotion: true });
-  Math.random = () => 0.9;
+  Math.random = () => 0.99;
   findButton(screen.tree, 'wheelSpin').props.onclick();
   assert.equal(screen.ui.wheel.spinning, false);
   assert.ok(findButton(screen.tree, 'wheelOrder'));

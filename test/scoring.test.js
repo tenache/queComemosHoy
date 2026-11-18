@@ -279,8 +279,8 @@ test('after-meal question: due from cook minutes + 60 min, once per meal, not fo
   assert.equal(afterMealDue([], STARTER_DISHES, NOW), null);
 });
 
-test('starter dishes: about 70 mains plus sides, valid, and include the ones the spec names', () => {
-  // The spec asked for 30 to 40; the Mediterranean dishes (#36) took it to 69.
+test('starter dishes: about 75 mains plus sides, valid, and include the ones the spec names', () => {
+  // The spec asked for 30 to 40; the Mediterranean dishes (#36) took it to 77.
   const mains = STARTER_DISHES.filter((d) => d.role === 'main');
   assert.ok(mains.length >= 60 && mains.length <= 80, `${mains.length} mains`);
   assert.ok(STARTER_DISHES.every((d) => d.role === 'main' || d.role === 'side'));

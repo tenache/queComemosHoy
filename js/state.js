@@ -1,7 +1,7 @@
 // The app's state as one versioned JSON object, plus pure helpers that change
 // it. No DOM and no storage here, so `node --test` can cover it.
 
-import { CHANGED_IN_V6, NEW_IN_V3, NEW_IN_V6, NEW_IN_V8, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
+import { CHANGED_IN_V6, NEW_IN_V3, NEW_IN_V6, NEW_IN_V8, SIDES_IN_V8, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
 import { ACTIONS, EFFORT, FAVORITES_MAX, LIKING, MOOD_IDS, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
 import { FOODS } from './nutrition.js';
 import { cleanGroup, cleanGroups } from './group.js';
@@ -165,6 +165,7 @@ function migrate(raw) {
   if (blob.schemaVersion === 7) {
     // v8: the Mediterranean dishes, and "Mediterránea" on the wheel (#36).
     addStarters(blob, NEW_IN_V8);
+    giveSides(blob, SIDES_IN_V8);
     blob.cuisines = withCuisines(blob.cuisines, NEW_CUISINES_IN_V8);
     blob.schemaVersion = 8;
   }
@@ -174,16 +175,28 @@ function migrate(raw) {
 const STARTERS = new Map(STARTER_DISHES.map((d) => [d.id, d]));
 
 /**
- * The user's dishes as the starters see them: `ids` and `names` (normalized
- * name → id), and `local(id)`, a starter as this user has it: under its id, or
- * their own dish with its name; undefined if neither. Only the dishes
- * normalizeState keeps count: one it drops can't stand in for a starter.
+ * A dish name for telling whether two dishes are the same one: case, accents
+ * and spacing don't count ("Tabule" is "Tabulé"), as on the wheel. Only the
+ * migrations use it; the rest of the app keeps normalizeName.
+ */
+const nameKey = (name) => String(name ?? '').normalize('NFD').replace(/\p{M}/gu, '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('es');
+
+/**
+ * The user's dishes as the starters see them: `ids`, `names` (nameKey → id),
+ * and `local(id)`, a starter as this user has it: under its id, or their own
+ * dish with its name; undefined if neither. Only the dishes normalizeState
+ * keeps count: one it drops (no id, no name, or an id already used) can't
+ * stand in for a starter.
  */
 function localDishes(dishes) {
-  const kept = dishes.filter((d) => d && typeof d === 'object' && d.id != null && String(d.name ?? '').trim());
-  const ids = new Set(kept.map((d) => String(d.id)));
-  const names = new Map(kept.map((d) => [normalizeName(d.name), String(d.id)]));
-  const local = (id) => (ids.has(id) ? id : names.get(normalizeName(STARTERS.get(id).name)));
+  const ids = new Set();
+  const names = new Map();
+  for (const d of dishes) {
+    if (!d || typeof d !== 'object' || d.id == null || !String(d.name ?? '').trim() || ids.has(String(d.id))) continue;
+    ids.add(String(d.id));
+    names.set(nameKey(d.name), String(d.id));
+  }
+  const local = (id) => (ids.has(id) ? id : names.get(nameKey(STARTERS.get(id).name)));
   return { ids, names, local };
 }
 
@@ -196,13 +209,28 @@ function localDishes(dishes) {
  */
 function addStarters(blob, newIds) {
   const { ids, names, local } = localDishes(blob.dishes);
-  const added = newIds.map((id) => STARTERS.get(id)).filter((s) => !ids.has(s.id) && !names.has(normalizeName(s.name)));
+  const added = newIds.map((id) => STARTERS.get(id)).filter((s) => !ids.has(s.id) && !names.has(nameKey(s.name)));
   for (const s of added) {
     ids.add(s.id);
-    names.set(normalizeName(s.name), s.id);
+    names.set(nameKey(s.name), s.id);
   }
   // A new array: blob.dishes may still be the caller's.
   blob.dishes = [...blob.dishes, ...added.map((s) => ({ ...copyStarter(s), sides: s.sides.map(local).filter(Boolean) }))];
+}
+
+/**
+ * Gives older starter dishes their new sides (v8: tortilla de papas), only if
+ * the dish still has its starter name and no sides: an edited dish is the
+ * user's, and stays. Runs after addStarters, so the new sides are there.
+ */
+function giveSides(blob, starterIds) {
+  const { local } = localDishes(blob.dishes);
+  blob.dishes = blob.dishes.map((raw) => {
+    const starter = raw && typeof raw === 'object' && starterIds.includes(String(raw.id)) ? STARTERS.get(String(raw.id)) : undefined;
+    if (!starter || String(raw.name ?? '').trim() !== starter.name) return raw;
+    if (Array.isArray(raw.sides) && raw.sides.length > 0) return raw;
+    return { ...raw, sides: starter.sides.map(local).filter(Boolean) };
+  });
 }
 
 /** The wheel's cuisines plus `names`, each only if a cuisine with that name (any case or accent) isn't there. */
@@ -272,7 +300,7 @@ function migrateToV6(blob) {
     if (!oldName || String(raw.name ?? '').trim() !== oldName) return raw;
     const starter = STARTERS.get(String(raw.id));
     const dish = { ...raw };
-    const taken = names.get(normalizeName(starter.name));
+    const taken = names.get(nameKey(starter.name));
     if (taken === undefined || taken === String(raw.id)) dish.name = starter.name;
     if (!Array.isArray(raw.sides) || raw.sides.length === 0) dish.sides = starter.sides.map(local).filter(Boolean);
     return dish;

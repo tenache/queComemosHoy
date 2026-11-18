@@ -199,7 +199,7 @@ test('the landing angle always falls inside the chosen slice', () => {
   const rng = seededRng(9);
   const wheels = [
     buildSlices(DEFAULT_CUISINES, [], FRIDAY),
-    buildSlices(DEFAULT_CUISINES, daily(MONDAY), MONDAY), // cuisine slices are 1/96 of the wheel each
+    buildSlices(DEFAULT_CUISINES, daily(MONDAY), MONDAY), // cuisine slices are 1/128 of the wheel each
     buildSlices(['Pizza'], daysAgo(MONDAY, 3), MONDAY),
     buildSlices(Array.from({ length: 40 }, (_, i) => `c${i}`), daily(MONDAY), MONDAY),
   ];

@@ -34,7 +34,10 @@ export const WHEEL = {
 export const DEFAULT_CUISINES = ['China', 'Mexicana', 'Hamburguesas', 'Pizza', 'Sushi', 'Empanadas', 'Árabe', 'Mediterránea'];
 /** Cuisines that v6 adds to wheels that don't have them yet (#29). */
 export const NEW_CUISINES_IN_V6 = ['Árabe'];
-/** Cuisines that v8 adds (#36): delivery apps list "Mediterránea" (Greek, Lebanese, rice dishes, bowls). */
+/**
+ * Cuisines that v8 adds (#36). Uber Eats has "Mediterránea" as a category; in other
+ * apps it is a search: Greek places, rice dishes and tapas, bowls (Lebanese ones are under Árabe too).
+ */
 export const NEW_CUISINES_IN_V8 = ['Mediterránea'];
 export const MAX_CUISINE_LENGTH = 24;
 export const COOK = 'cook';

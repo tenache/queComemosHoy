@@ -29,7 +29,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const CODE_RE = new RegExp(`^[${CODE_ALPHABET}]{${GROUP.codeLength}}$`);
 const SECRET_RE = /^[0-9a-f]{32}$/;
 const PICK_ID_RE = /^[0-9a-z]{6,24}$/;
-const DISH_ID_RE = /^[a-z0-9-]{1,40}$/;
+export const DISH_ID_RE = /^[a-z0-9-]{1,40}$/;
 const DAY_RE = /^\d{8}$/;
 const TIME_RE = /^\d{1,16}$/;
 
