@@ -24,7 +24,7 @@ export const FOODS = {
   pato: { kcal: 250, protein: 17, carbs: 0, fat: 20, fiber: 0, aliases: ['pato'] },
   merluza: { kcal: 75, protein: 16, carbs: 0, fat: 1, fiber: 0, aliases: ['merluza', 'pescado'] },
   atun: { kcal: 115, protein: 26, carbs: 0, fat: 1, fiber: 0, aliases: ['atun'] },
-  mariscos: { kcal: 85, protein: 16, carbs: 2, fat: 1.5, fiber: 0, aliases: ['mariscos', 'langostinos', 'calamar', 'mejillones'] },
+  mariscos: { kcal: 85, protein: 16, carbs: 2, fat: 1.5, fiber: 0, aliases: ['mariscos', 'langostinos', 'gambas', 'calamar', 'sepia', 'mejillones'] },
   huevo: { kcal: 143, protein: 12.6, carbs: 0.7, fat: 9.5, fiber: 0, aliases: ['huevo'], each: 50 },
   jamon: { kcal: 120, protein: 18, carbs: 2, fat: 4, fiber: 0, aliases: ['jamon'] },
   queso: { kcal: 300, protein: 22, carbs: 2, fat: 23, fiber: 0, aliases: ['queso', 'mozzarella', 'muzzarella', 'cremoso', 'tybo'] },
@@ -73,6 +73,29 @@ export const FOODS = {
   levadura: { kcal: 325, protein: 40, carbs: 41, fat: 7.6, fiber: 27, aliases: ['levadura'] },
   'salsa de soja': { kcal: 53, protein: 8, carbs: 5, fat: 0.6, fiber: 0.8, aliases: ['salsa de soja', 'soja'] },
   vinagre: { kcal: 18, protein: 0, carbs: 0, fat: 0, fiber: 0, aliases: ['vinagre'], minor: true },
+
+  // For the Mediterranean dishes (#36). Lamb, sardines and clams are as bought,
+  // with their bones, heads or shells, so the table already counts only what is eaten.
+  cordero: { kcal: 170, protein: 12.5, carbs: 0, fat: 13, fiber: 0, aliases: ['cordero', 'paletilla'] },
+  butifarra: { kcal: 270, protein: 15, carbs: 1, fat: 23, fiber: 0, aliases: ['butifarra'], each: 150 },
+  sardinas: { kcal: 85, protein: 12, carbs: 0, fat: 4, fiber: 0, aliases: ['sardina'] },
+  almejas: { kcal: 15, protein: 2.5, carbs: 0.5, fat: 0.2, fiber: 0, aliases: ['almeja', 'berberechos'] },
+  anchoas: { kcal: 210, protein: 29, carbs: 0, fat: 10, fiber: 0, aliases: ['anchoa'] },
+  feta: { kcal: 265, protein: 14, carbs: 4, fat: 21, fiber: 0, aliases: ['feta', 'queso feta'] },
+  ricota: { kcal: 175, protein: 11, carbs: 3, fat: 13, fiber: 0, aliases: ['ricota', 'ricotta'] },
+  yogur: { kcal: 61, protein: 3.5, carbs: 4.7, fat: 3.3, fiber: 0, aliases: ['yogur', 'yogurt'] },
+  'pan de pita': { kcal: 275, protein: 9, carbs: 56, fat: 1.2, fiber: 2.2, aliases: ['pan de pita', 'pita'], each: 60 },
+  cuscus: { kcal: 376, protein: 13, carbs: 77, fat: 0.6, fiber: 5, aliases: ['cuscus'] },
+  bulgur: { kcal: 342, protein: 12, carbs: 76, fat: 1.3, fiber: 12.5, aliases: ['bulgur', 'burgol', 'trigo burgol'] },
+  'garbanzos secos': { kcal: 378, protein: 20.5, carbs: 63, fat: 6, fiber: 12, aliases: ['garbanzos secos'] },
+  porotos: { kcal: 115, protein: 7.5, carbs: 21, fat: 0.4, fiber: 5, aliases: ['poroto', 'alubia', 'judias blancas', 'mongetes'] },
+  chauchas: { kcal: 31, protein: 1.8, carbs: 7, fat: 0.2, fiber: 2.7, aliases: ['chaucha', 'judias verdes', 'vainitas'] },
+  tahini: { kcal: 595, protein: 17, carbs: 21, fat: 54, fiber: 9, aliases: ['tahini', 'tahina', 'pasta de sesamo'] },
+  pinones: { kcal: 673, protein: 13.7, carbs: 13, fat: 68, fiber: 3.7, aliases: ['pinon'] },
+  almendras: { kcal: 579, protein: 21, carbs: 22, fat: 50, fiber: 12.5, aliases: ['almendra'] },
+  pasas: { kcal: 299, protein: 3, carbs: 79, fat: 0.5, fiber: 3.7, aliases: ['pasas', 'pasas de uva'] },
+  albahaca: { kcal: 23, protein: 3.2, carbs: 2.7, fat: 0.6, fiber: 1.6, aliases: ['albahaca'], minor: true },
+  perejil: { kcal: 36, protein: 3, carbs: 6.3, fat: 0.8, fiber: 3.3, aliases: ['perejil', 'cilantro', 'menta', 'hierbabuena'], minor: true },
 };
 
 export const MACROS = ['kcal', 'protein', 'carbs', 'fat', 'fiber'];

@@ -25,6 +25,14 @@ const STARTER_EFFORT = {
   'bife-plancha': 1, 'pechuga-plancha': 1, 'fideos-manteca': 1, 'pulled-pork': 2,
   pure: 3, 'pure-calabaza': 3, 'ensalada-mixta': 2, 'ensalada-tomate': 1, 'papas-fritas': 3,
   'papas-horno': 2, 'batatas-horno': 1, 'arroz-blanco': 1, 'verduras-vapor': 2,
+  // Mediterranean (v8, #36).
+  fideua: 3, 'arroz-negro': 3, 'butifarra-judias': 1, salmorejo: 2, 'gambas-ajillo': 1, 'calamares-romana': 3,
+  sardinas: 2, suquet: 3, 'pasta-pesto': 2, 'pasta-puttanesca': 1, 'pasta-aglio-olio': 1, 'espaguetis-almejas': 2,
+  'pasta-norma': 2, 'berenjenas-parmesana': 4, minestrone: 2, musaka: 5, souvlaki: 3, 'tarta-espinaca-feta': 3,
+  'tomates-rellenos': 3, 'albondigas-griegas': 3, 'cordero-horno': 1, 'sopa-lentejas-rojas': 1, falafel: 4,
+  'lentejas-arroz': 2, shakshuka: 1, 'cuscus-verduras': 2, 'tajin-pollo': 2, ratatouille: 3, 'ensalada-nizarda': 2,
+  'pan-tomate': 1, escalivada: 2, 'espinacas-catalana': 2, 'ensalada-griega': 2, 'ensalada-caprese': 1,
+  hummus: 1, tabule: 3, cuscus: 1,
 };
 
 const dish = (role, id, name, emoji, cookMinutes, health, yum, mains, ingredients, sides = []) => ({
@@ -97,6 +105,39 @@ export const STARTER_DISHES = [
   // Added in schema v6 (#30): a big piece for everyone to make sandwiches.
   d('pulled-pork', 'Pulled pork', '🥪', 240, 2, 5, ['cerdo', 'pan'], ['bondiola de cerdo', 'pan de hamburguesa'], ['papas-fritas', 'ensalada-mixta']),
 
+  // Mediterranean cooking, added in schema v8 (#36): Spain and Catalonia, Italy,
+  // Greece, Turkey and the Levant, North Africa, Provence. The menu already had
+  // paella, gazpacho, tortilla de papas, garbanzos con espinaca, pizza and ñoquis.
+  d('fideua', 'Fideuá', '🦐', 40, 3, 5, ['pasta', 'mariscos'], ['fideos finos', 'langostinos', 'calamar', 'tomate triturado', 'caldo de pescado']),
+  d('arroz-negro', 'Arroz negro', '🦑', 45, 3, 5, ['arroz', 'mariscos'], ['arroz', 'calamar', 'tinta de calamar', 'caldo de pescado', 'cebolla']),
+  d('butifarra-judias', 'Butifarra con judías', '🫘', 25, 2, 5, ['cerdo', 'legumbres'], ['butifarra', 'judías blancas', 'ajo', 'perejil']),
+  d('salmorejo', 'Salmorejo', '🍅', 15, 4, 4, ['tomate', 'pan'], ['tomate', 'pan', 'aceite de oliva', 'huevo', 'jamón crudo']),
+  d('gambas-ajillo', 'Gambas al ajillo', '🧄', 15, 4, 5, ['mariscos'], ['gambas', 'ajo', 'aceite de oliva', 'guindilla', 'pan']),
+  d('calamares-romana', 'Calamares a la romana', '🍤', 25, 2, 5, ['mariscos'], ['calamar', 'harina', 'huevo', 'limón'], ['ensalada-mixta', 'papas-fritas']),
+  d('sardinas', 'Sardinas a la plancha', '🐟', 20, 5, 3, ['pescado'], ['sardinas', 'limón', 'ajo', 'perejil'], ['ensalada-mixta', 'escalivada', 'papas-horno', 'pan-tomate']),
+  d('suquet', 'Suquet de pescado', '🍲', 45, 4, 5, ['pescado', 'papa'], ['merluza', 'papa', 'tomate', 'almendras', 'caldo de pescado']),
+  d('pasta-pesto', 'Pasta al pesto', '🌿', 15, 3, 5, ['pasta'], ['fideos', 'albahaca', 'piñones', 'queso rallado', 'aceite de oliva']),
+  d('pasta-puttanesca', 'Pasta puttanesca', '🫒', 20, 3, 4, ['pasta', 'tomate'], ['fideos', 'tomate triturado', 'aceitunas', 'alcaparras', 'anchoas']),
+  d('pasta-aglio-olio', 'Espaguetis aglio e olio', '🌶️', 15, 2, 4, ['pasta'], ['fideos', 'ajo', 'aceite de oliva', 'ají molido']),
+  d('espaguetis-almejas', 'Espaguetis con almejas', '🐚', 25, 3, 5, ['pasta', 'mariscos'], ['fideos', 'almejas', 'vino blanco', 'ajo', 'perejil']),
+  d('pasta-norma', 'Pasta alla Norma', '🍝', 35, 3, 5, ['pasta', 'berenjena'], ['fideos', 'berenjena', 'tomate triturado', 'ricota', 'albahaca']),
+  d('berenjenas-parmesana', 'Berenjenas a la parmesana', '🧀', 75, 3, 5, ['berenjena', 'queso'], ['berenjena', 'tomate triturado', 'mozzarella', 'queso rallado', 'albahaca']),
+  d('minestrone', 'Minestrone', '🥣', 45, 5, 3, ['verdura', 'legumbres'], ['zanahoria', 'apio', 'zapallito', 'papa', 'porotos blancos', 'tomate triturado', 'fideos']),
+  d('musaka', 'Musaka', '🍆', 100, 3, 5, ['berenjena', 'carne'], ['berenjena', 'carne picada', 'papa', 'tomate triturado', 'leche', 'harina', 'manteca'], ['ensalada-griega']),
+  d('souvlaki', 'Souvlaki de cerdo', '🍢', 40, 3, 5, ['cerdo', 'pan'], ['cerdo', 'pan de pita', 'yogur', 'pepino', 'tomate'], ['ensalada-griega', 'papas-fritas']),
+  d('tarta-espinaca-feta', 'Tarta de espinaca y feta', '🥧', 70, 4, 4, ['masa', 'verdura', 'queso'], ['masa filo', 'espinaca', 'queso feta', 'huevo', 'cebolla de verdeo']),
+  d('tomates-rellenos', 'Tomates rellenos de arroz', '🍅', 90, 4, 4, ['verdura', 'arroz'], ['tomate', 'morrón', 'arroz', 'cebolla', 'papa']),
+  d('albondigas-griegas', 'Albóndigas griegas', '🍖', 40, 3, 5, ['carne'], ['carne picada', 'pan', 'huevo', 'yogur', 'pepino'], ['ensalada-griega', 'papas-fritas', 'cuscus']),
+  d('cordero-horno', 'Cordero al horno', '🐑', 150, 2, 5, ['cordero'], ['cordero', 'limón', 'ajo', 'romero'], ['papas-horno', 'ensalada-griega', 'cuscus']),
+  d('sopa-lentejas-rojas', 'Sopa de lentejas rojas', '🥣', 30, 5, 4, ['legumbres'], ['lentejas rojas', 'cebolla', 'zanahoria', 'limón']),
+  d('falafel', 'Falafel', '🧆', 40, 3, 5, ['legumbres', 'pan'], ['garbanzos secos', 'perejil', 'cebolla', 'pan de pita', 'tahini'], ['hummus', 'tabule', 'ensalada-griega']),
+  d('lentejas-arroz', 'Lentejas con arroz', '🍚', 45, 4, 4, ['legumbres', 'arroz'], ['lentejas', 'arroz', 'cebolla', 'yogur']),
+  d('shakshuka', 'Shakshuka', '🍳', 25, 4, 4, ['huevo', 'tomate'], ['huevo', 'tomate triturado', 'morrón', 'cebolla', 'pan']),
+  d('cuscus-verduras', 'Cuscús con verduras', '🥘', 45, 5, 4, ['cuscus', 'verdura', 'legumbres'], ['cuscús', 'garbanzos', 'zanahoria', 'zapallito', 'calabaza']),
+  d('tajin-pollo', 'Tajín de pollo con limón', '🍋', 60, 4, 5, ['pollo'], ['pollo', 'limón', 'aceitunas', 'cebolla'], ['cuscus', 'arroz-blanco']),
+  d('ratatouille', 'Ratatouille', '🫑', 60, 5, 4, ['verdura', 'berenjena'], ['berenjena', 'zapallito', 'morrón', 'tomate', 'cebolla'], ['arroz-blanco', 'cuscus', 'huevos-fritos']),
+  d('ensalada-nizarda', 'Ensalada nizarda', '🥗', 25, 5, 4, ['verdura', 'pescado', 'huevo'], ['atún', 'huevo', 'papa', 'chauchas', 'tomate', 'aceitunas']),
+
   // Sides (added in schema v3).
   side('pure', 'Puré de papas', '🥔', 25, 3, 4, ['papa'], ['papa', 'leche', 'manteca']),
   side('pure-calabaza', 'Puré de calabaza', '🎃', 25, 4, 3, ['calabaza'], ['calabaza', 'manteca']),
@@ -107,6 +148,16 @@ export const STARTER_DISHES = [
   side('batatas-horno', 'Batatas al horno', '🍠', 45, 4, 4, ['batata'], ['batata']),
   side('arroz-blanco', 'Arroz blanco', '🍚', 20, 3, 3, ['arroz'], ['arroz']),
   side('verduras-vapor', 'Verduras al vapor', '🥕', 15, 5, 2, ['verdura'], ['brócoli', 'zanahoria', 'zapallito']),
+
+  // Mediterranean sides (v8, #36). They go with the new mains; the older mains keep their sides.
+  side('pan-tomate', 'Pan con tomate', '🍞', 10, 3, 4, ['pan'], ['pan', 'tomate', 'aceite de oliva']),
+  side('escalivada', 'Escalivada', '🫑', 60, 5, 4, ['verdura'], ['berenjena', 'morrón', 'cebolla']),
+  side('espinacas-catalana', 'Espinacas a la catalana', '🥬', 15, 5, 3, ['verdura'], ['espinaca', 'pasas de uva', 'piñones']),
+  side('ensalada-griega', 'Ensalada griega', '🥗', 10, 4, 4, ['verdura', 'queso'], ['tomate', 'pepino', 'cebolla morada', 'aceitunas', 'queso feta']),
+  side('ensalada-caprese', 'Ensalada caprese', '🍅', 5, 4, 4, ['tomate', 'queso'], ['tomate', 'mozzarella', 'albahaca']),
+  side('hummus', 'Hummus', '🫘', 10, 4, 4, ['legumbres'], ['garbanzos', 'tahini', 'limón']),
+  side('tabule', 'Tabulé', '🌿', 25, 5, 3, ['verdura'], ['bulgur', 'perejil', 'tomate', 'menta', 'limón']),
+  side('cuscus', 'Cuscús', '🌾', 10, 3, 3, ['cuscus'], ['cuscús']),
 ];
 
 /**
@@ -143,3 +194,12 @@ export const CHANGED_IN_V6 = {
 
 /** Starter dishes that v6 adds to existing data. */
 export const NEW_IN_V6 = ['pulled-pork'];
+
+/** Starter dishes that v8 adds to existing data (#36): the Mediterranean ones. */
+export const NEW_IN_V8 = [
+  'fideua', 'arroz-negro', 'butifarra-judias', 'salmorejo', 'gambas-ajillo', 'calamares-romana', 'sardinas', 'suquet',
+  'pasta-pesto', 'pasta-puttanesca', 'pasta-aglio-olio', 'espaguetis-almejas', 'pasta-norma', 'berenjenas-parmesana', 'minestrone',
+  'musaka', 'souvlaki', 'tarta-espinaca-feta', 'tomates-rellenos', 'albondigas-griegas', 'cordero-horno',
+  'sopa-lentejas-rojas', 'falafel', 'lentejas-arroz', 'shakshuka', 'cuscus-verduras', 'tajin-pollo', 'ratatouille', 'ensalada-nizarda',
+  'pan-tomate', 'escalivada', 'espinacas-catalana', 'ensalada-griega', 'ensalada-caprese', 'hummus', 'tabule', 'cuscus',
+];

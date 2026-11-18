@@ -31,9 +31,11 @@ export const WHEEL = {
   landingMargin: 0.12, // keep this share of a slice clear at each edge, so the pointer never sits on a line
 };
 
-export const DEFAULT_CUISINES = ['China', 'Mexicana', 'Hamburguesas', 'Pizza', 'Sushi', 'Empanadas', 'Árabe'];
+export const DEFAULT_CUISINES = ['China', 'Mexicana', 'Hamburguesas', 'Pizza', 'Sushi', 'Empanadas', 'Árabe', 'Mediterránea'];
 /** Cuisines that v6 adds to wheels that don't have them yet (#29). */
 export const NEW_CUISINES_IN_V6 = ['Árabe'];
+/** Cuisines that v8 adds (#36): delivery apps list "Mediterránea" (Greek, Lebanese, rice dishes, bowls). */
+export const NEW_CUISINES_IN_V8 = ['Mediterránea'];
 export const MAX_CUISINE_LENGTH = 24;
 export const COOK = 'cook';
 

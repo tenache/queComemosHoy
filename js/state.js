@@ -1,12 +1,12 @@
 // The app's state as one versioned JSON object, plus pure helpers that change
 // it. No DOM and no storage here, so `node --test` can cover it.
 
-import { CHANGED_IN_V6, NEW_IN_V3, NEW_IN_V6, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
+import { CHANGED_IN_V6, NEW_IN_V3, NEW_IN_V6, NEW_IN_V8, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
 import { ACTIONS, EFFORT, FAVORITES_MAX, LIKING, MOOD_IDS, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
 import { FOODS } from './nutrition.js';
 import { cleanGroup, cleanGroups } from './group.js';
 import { cleanParams } from './params.js';
-import { DEFAULT_CUISINES, NEW_CUISINES_IN_V6, addCuisine, cleanCuisine, cleanCuisines } from './wheel.js';
+import { DEFAULT_CUISINES, NEW_CUISINES_IN_V6, NEW_CUISINES_IN_V8, addCuisine, cleanCuisine, cleanCuisines } from './wheel.js';
 
 // 1: the v1 app. 2: adds the delivery wheel (`cuisines`, `deliveries`).
 // 3: mains and sides (`role`, `sides`, `sideId` on meals) and favourites.
@@ -14,7 +14,8 @@ import { DEFAULT_CUISINES, NEW_CUISINES_IN_V6, addCuisine, cleanCuisine, cleanCu
 // 5: `effort` on a dish (hidden from the user).
 // 6: no new fields: the starter menu and the wheel change (#29, #30).
 // 7: several friends' groups (#33): `settings.group` becomes `settings.groups`.
-export const SCHEMA_VERSION = 7;
+// 8: no new fields: the Mediterranean dishes, and "Mediterránea" on the wheel (#36).
+export const SCHEMA_VERSION = 8;
 export const PORTIONS = { min: 1, max: 12, default: 2 };
 const MAX_RECIPE_ITEMS = 40;
 const MAX_RECIPE_STEPS = 30;
@@ -161,7 +162,54 @@ function migrate(raw) {
     blob.settings = { ...settings, groups: kept ? [kept] : [] };
     blob.schemaVersion = 7;
   }
+  if (blob.schemaVersion === 7) {
+    // v8: the Mediterranean dishes, and "Mediterránea" on the wheel (#36).
+    addStarters(blob, NEW_IN_V8);
+    blob.cuisines = withCuisines(blob.cuisines, NEW_CUISINES_IN_V8);
+    blob.schemaVersion = 8;
+  }
   return blob;
+}
+
+const STARTERS = new Map(STARTER_DISHES.map((d) => [d.id, d]));
+
+/**
+ * The user's dishes as the starters see them: `ids` and `names` (normalized
+ * name → id), and `local(id)`, a starter as this user has it: under its id, or
+ * their own dish with its name; undefined if neither. Only the dishes
+ * normalizeState keeps count: one it drops can't stand in for a starter.
+ */
+function localDishes(dishes) {
+  const kept = dishes.filter((d) => d && typeof d === 'object' && d.id != null && String(d.name ?? '').trim());
+  const ids = new Set(kept.map((d) => String(d.id)));
+  const names = new Map(kept.map((d) => [normalizeName(d.name), String(d.id)]));
+  const local = (id) => (ids.has(id) ? id : names.get(normalizeName(STARTERS.get(id).name)));
+  return { ids, names, local };
+}
+
+/**
+ * Adds new starter dishes to existing data (v6, v8), unless the user has a
+ * dish with that id or their own dish with that name: then theirs is the one.
+ * The new dishes' sides point at the user's own dish when it has the side's
+ * name, and leave out a side they deleted. All the new dishes count before
+ * any sides are set, so a new main can point at a new side.
+ */
+function addStarters(blob, newIds) {
+  const { ids, names, local } = localDishes(blob.dishes);
+  const added = newIds.map((id) => STARTERS.get(id)).filter((s) => !ids.has(s.id) && !names.has(normalizeName(s.name)));
+  for (const s of added) {
+    ids.add(s.id);
+    names.set(normalizeName(s.name), s.id);
+  }
+  // A new array: blob.dishes may still be the caller's.
+  blob.dishes = [...blob.dishes, ...added.map((s) => ({ ...copyStarter(s), sides: s.sides.map(local).filter(Boolean) }))];
+}
+
+/** The wheel's cuisines plus `names`, each only if a cuisine with that name (any case or accent) isn't there. */
+function withCuisines(list, names) {
+  let cuisines = cleanCuisines(list);
+  for (const name of names) cuisines = addCuisine(cuisines, name) ?? cuisines;
+  return cuisines;
 }
 
 /**
@@ -218,31 +266,19 @@ function migrateToV3(blob) {
  * under its name is theirs: sides point at theirs, and nothing is added twice.
  */
 function migrateToV6(blob) {
-  const starters = new Map(STARTER_DISHES.map((d) => [d.id, d]));
-  // Only the dishes normalizeState keeps: one it drops can't stand in for a starter.
-  const dishes = blob.dishes.filter((d) => d && typeof d === 'object' && d.id != null && String(d.name ?? '').trim());
-  const ids = new Set(dishes.map((d) => String(d.id)));
-  const names = new Map(dishes.map((d) => [normalizeName(d.name), String(d.id)]));
-  // A starter as this user has it: under its id, or their own dish with its name. Undefined if neither.
-  const local = (id) => (ids.has(id) ? id : names.get(normalizeName(starters.get(id).name)));
-  const localSides = (starter) => starter.sides.map(local).filter(Boolean);
+  const { names, local } = localDishes(blob.dishes);
   blob.dishes = blob.dishes.map((raw) => {
     const oldName = raw && typeof raw === 'object' ? CHANGED_IN_V6[String(raw.id)] : undefined;
     if (!oldName || String(raw.name ?? '').trim() !== oldName) return raw;
-    const starter = starters.get(String(raw.id));
+    const starter = STARTERS.get(String(raw.id));
     const dish = { ...raw };
     const taken = names.get(normalizeName(starter.name));
     if (taken === undefined || taken === String(raw.id)) dish.name = starter.name;
-    if (!Array.isArray(raw.sides) || raw.sides.length === 0) dish.sides = localSides(starter);
+    if (!Array.isArray(raw.sides) || raw.sides.length === 0) dish.sides = starter.sides.map(local).filter(Boolean);
     return dish;
   });
-  for (const id of NEW_IN_V6) {
-    const starter = starters.get(id);
-    if (!ids.has(id) && !names.has(normalizeName(starter.name))) blob.dishes.push({ ...copyStarter(starter), sides: localSides(starter) });
-  }
-  let cuisines = cleanCuisines(blob.cuisines);
-  for (const name of NEW_CUISINES_IN_V6) cuisines = addCuisine(cuisines, name) ?? cuisines;
-  blob.cuisines = cuisines;
+  addStarters(blob, NEW_IN_V6);
+  blob.cuisines = withCuisines(blob.cuisines, NEW_CUISINES_IN_V6);
   blob.schemaVersion = 6;
 }
 
