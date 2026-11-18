@@ -6,7 +6,7 @@ Seguro que te pasó: estás en la tuya, trabajando, estudiando, o viendo Tik Tok
 
 ## La app (v1)
 
-Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en el navegador, se puede instalar en la pantalla de inicio y funciona sin conexión. Ya trae unas 40 comidas caseras y 9 acompañamientos, así que no hay que cargar nada para empezar.
+Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en el navegador, se puede instalar en la pantalla de inicio y funciona sin conexión. Ya trae unas 80 comidas caseras y 17 acompañamientos, entre ellos una tanda de cocina mediterránea (de España, Italia, Grecia, el Líbano, el norte de África y la Provenza), así que no hay que cargar nada para empezar.
 
 - **¿Cómo está nuestro cocinero hoy?** Una vez por día la app pregunta: con fiaca, apurado, con ganas de algo rico, de algo saludable o de algo distinto, o como siempre. Las sugerencias de ese día se acomodan a la respuesta (lo más fácil, lo más rápido, lo más rico, lo más sano, más variedad, o nada). Se cambia tocando el emoji al lado del título.
 - **Una tarjeta por vez.** Deslizá a la derecha (👉) si la cocinás, a la izquierda (👈) si hoy no, o tocá 🛒 si te falta algún ingrediente.
@@ -14,7 +14,7 @@ Desde 2026 *Qué comemos hoy* es una app para el celular (una PWA): se abre en e
 - **O elegí vos.** Con "Elegir de la lista" ves todas las comidas y anotás la que quieras, o fijás primero el acompañamiento.
 - **Recetas y macros.** Tocá la tarjeta (o "📝 Receta") y ves la receta del plato y la del acompañamiento, con las cantidades para las porciones que elijas, y las calorías, proteínas, hidratos, grasas y fibra aproximadas por porción. Las recetas se pueden editar en Comidas.
 - **Tus favoritas.** Al empezar elegís hasta 5 comidas favoritas (⭐), que salen un poco más seguido. Se cambian en Comidas.
-- **Ruleta del delivery.** Para las noches de pedir: girás y sale una cocina (china, pizza, sushi…) o "¿Y si cocinamos?". Esa porción crece cuando venís pidiendo mucho y se achica si hace rato que no pedís o es fin de semana.
+- **Ruleta del delivery.** Para las noches de pedir: girás y sale una cocina (china, pizza, sushi, mediterránea…) o "¿Y si cocinamos?". Esa porción crece cuando venís pidiendo mucho y se achica si hace rato que no pedís o es fin de semana.
 - **Aprende de lo que elegís.** Lo que cocinás sube, lo que rechazás baja, y nada desaparece salvo que marques "No mostrar nunca": hasta la comida menos querida vuelve a salir cada tanto.
 - **No repite.** Baja las comidas que comiste hace poco y las que comparten ingrediente principal con lo de ayer.
 - **Lista de compras.** Lo que marcás como faltante queda anotado hasta que toques "Comprado".
@@ -89,7 +89,7 @@ HTML, CSS y JavaScript sin framework ni build.
 | `js/strings.js` | Todos los textos de la interfaz, para poder agregar otro idioma. |
 | `js/dishes.js` | Las comidas iniciales, con sus acompañamientos. |
 | `js/recipes.js` | Las recetas de las comidas iniciales. |
-| `js/nutrition.js` | Calorías y macros por 100 g de unos 60 alimentos (redondeados de USDA FoodData Central), el cálculo por porción y la lectura de las líneas de una receta. Módulo puro. |
+| `js/nutrition.js` | Calorías y macros por 100 g de unos 80 alimentos (redondeados de USDA FoodData Central), el cálculo por porción y la lectura de las líneas de una receta. Módulo puro. |
 | `js/group.js` | Los grupos de amigos en el teléfono: el código, los nombres, la cola de elecciones que esperan para enviarse, y quién eligió qué en todos tus grupos. |
 | `js/app.js` | La interfaz. |
 | `sw.js` | El service worker: guarda la app para usarla sin conexión. |

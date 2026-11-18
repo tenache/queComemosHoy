@@ -18,7 +18,7 @@ import {
   undoCardAction,
 } from '../js/state.js';
 import { STORAGE_KEY, loadState, readBackup, saveState } from '../js/storage.js';
-import { NEW_IN_V3, NEW_IN_V6 } from '../js/dishes.js';
+import { NEW_IN_V3, NEW_IN_V6, NEW_IN_V8 } from '../js/dishes.js';
 
 const NOW = Date.UTC(2026, 10, 10, 20, 0, 0);
 
@@ -213,8 +213,8 @@ test('normalizeState: repairs bad values and rejects what it cannot use', () => 
     missing: ['Pan', 'pan', ''],
     settings: { pantryMode: 'weird', variety: 'high' },
   });
-  // v1 data is migrated all the way, so the dishes v3 and v6 add are there too.
-  const mine = fixed.dishes.filter((d) => !NEW_IN_V3.includes(d.id) && !NEW_IN_V6.includes(d.id));
+  // v1 data is migrated all the way, so the dishes v3, v6 and v8 add are there too.
+  const mine = fixed.dishes.filter((d) => ![...NEW_IN_V3, ...NEW_IN_V6, ...NEW_IN_V8].includes(d.id));
   assert.equal(mine.length, 1);
   assert.deepEqual(mine[0], {
     id: 'a',

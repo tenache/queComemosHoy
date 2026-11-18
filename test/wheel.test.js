@@ -199,7 +199,7 @@ test('the landing angle always falls inside the chosen slice', () => {
   const rng = seededRng(9);
   const wheels = [
     buildSlices(DEFAULT_CUISINES, [], FRIDAY),
-    buildSlices(DEFAULT_CUISINES, daily(MONDAY), MONDAY), // cuisine slices are 1/96 of the wheel each
+    buildSlices(DEFAULT_CUISINES, daily(MONDAY), MONDAY), // cuisine slices are 1/128 of the wheel each
     buildSlices(['Pizza'], daysAgo(MONDAY, 3), MONDAY),
     buildSlices(Array.from({ length: 40 }, (_, i) => `c${i}`), daily(MONDAY), MONDAY),
   ];
@@ -289,7 +289,7 @@ test('cuisines: add, rename and remove, with at least one left and no duplicates
   assert.deepEqual(cleanCuisines([' Pizza ', 'pizza', '', 7, null]), ['Pizza', '7']);
   assert.deepEqual(cleanCuisines([]), DEFAULT_CUISINES);
   assert.deepEqual(cleanCuisines('nope'), DEFAULT_CUISINES);
-  assert.deepEqual(DEFAULT_CUISINES, ['China', 'Mexicana', 'Hamburguesas', 'Pizza', 'Sushi', 'Empanadas', 'Árabe']);
+  assert.deepEqual(DEFAULT_CUISINES, ['China', 'Mexicana', 'Hamburguesas', 'Pizza', 'Sushi', 'Empanadas', 'Árabe', 'Mediterránea']);
 });
 
 test('state: v1 data migrates to v2 with the default cuisines and an empty log', () => {

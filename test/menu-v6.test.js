@@ -51,7 +51,7 @@ test('the menu: milanesas de berenjena take the milanesas\' sides, "Guiso de len
   const toppings = STARTER_RECIPES['pulled-pork'].items.map((i) => i.text);
   assert.ok(toppings.includes('mostaza, salsa romesco o palta, a elección'), 'the toppings are options in the recipe');
 
-  assert.deepEqual(DEFAULT_CUISINES, [...V5_CUISINES, 'Árabe']);
+  assert.deepEqual(DEFAULT_CUISINES.slice(0, V5_CUISINES.length + 1), [...V5_CUISINES, 'Árabe']);
 });
 
 test('migration v5 → v6: an untouched phone gets the new menu and Árabe, history kept', () => {
@@ -118,9 +118,10 @@ test("migration v5 → v6: the user's own dishes with a starter's name are used,
 
 test('migration v5 → v6: Árabe joins the wheel once', () => {
   const wheel = (cuisines) => normalizeState({ ...v5Blob(), cuisines }).cuisines;
-  assert.deepEqual(wheel(['Pizza']), ['Pizza', 'Árabe']);
-  assert.deepEqual(wheel(['Pizza', 'árabe']), ['Pizza', 'árabe'], 'already added by hand, in any case');
-  assert.deepEqual(wheel(['Pizza', 'Arabe']), ['Pizza', 'Arabe'], 'or without the accent');
+  // v8 then adds Mediterránea (#36).
+  assert.deepEqual(wheel(['Pizza']), ['Pizza', 'Árabe', 'Mediterránea']);
+  assert.deepEqual(wheel(['Pizza', 'árabe']), ['Pizza', 'árabe', 'Mediterránea'], 'already added by hand, in any case');
+  assert.deepEqual(wheel(['Pizza', 'Arabe']), ['Pizza', 'Arabe', 'Mediterránea'], 'or without the accent');
   assert.deepEqual(wheel('nope'), DEFAULT_CUISINES);
 });
 

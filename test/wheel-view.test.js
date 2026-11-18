@@ -90,7 +90,7 @@ afterEach(() => {
 
 test('a spin shows "Girando…", then the result that was picked before it started', async () => {
   const screen = openWheel();
-  Math.random = () => 0.9; // lands on the last cuisine
+  Math.random = () => 0.99; // lands on the last cuisine
   findButton(screen.tree, 'wheelSpin').props.onclick();
 
   assert.equal(screen.ui.wheel.spinning, true);
@@ -99,11 +99,11 @@ test('a spin shows "Girando…", then the result that was picked before it start
 
   await spinEnd();
   assert.equal(screen.ui.wheel.spinning, false);
-  assert.ok(textOf({ children: screen.tree }).includes('wheelLandedCuisineÁrabe'));
+  assert.ok(textOf({ children: screen.tree }).includes('wheelLandedCuisineMediterránea'));
   assert.equal(screen.state.deliveries.length, 0, 'spinning logs nothing');
 
   findButton(screen.tree, 'wheelOrder').props.onclick();
-  assert.deepEqual(screen.state.deliveries.map((d) => d.cuisine), ['Árabe'], 'only "¡Pedimos!" logs a delivery');
+  assert.deepEqual(screen.state.deliveries.map((d) => d.cuisine), ['Mediterránea'], 'only "¡Pedimos!" logs a delivery');
 });
 
 test('landing on "cook instead" offers to go and cook, and closes the wheel', async () => {
@@ -152,7 +152,7 @@ test('an edit that lands during a spin does not break the result', async () => {
   for (const [name, edit] of Object.entries(edits)) {
     const screen = openWheel();
     screen.state.deliveries.push({ time: Date.now() - 1000, cuisine: 'Pizza' });
-    Math.random = () => 0.9;
+    Math.random = () => 0.99; // the last cuisine, whatever the day and the slice sizes
     findButton(screen.tree, 'wheelSpin').props.onclick();
     const spun = screen.ui.wheel.slices;
     const before = JSON.stringify([screen.state.cuisines, screen.state.deliveries]);
@@ -164,7 +164,7 @@ test('an edit that lands during a spin does not break the result', async () => {
     const w = screen.ui.wheel;
     assert.equal(w.spinning, false, `${name}: the spin ended`);
     assert.equal(w.slices, spun, `${name}: the result is read from the wheel that was spun`);
-    assert.ok(textOf({ children: screen.tree }).includes('wheelLandedCuisineÁrabe'), `${name}: the result is shown`);
+    assert.ok(textOf({ children: screen.tree }).includes('wheelLandedCuisineMediterránea'), `${name}: the result is shown`);
     assert.ok(findButton(screen.tree, 'wheelSpinAgain'), `${name}: and the buttons with it`);
   }
 });
@@ -188,7 +188,7 @@ test('a re-render during a spin keeps the same wheel element', async () => {
 
 test('reduced motion: the result shows at once, with no timer', () => {
   const screen = openWheel({ reducedMotion: true });
-  Math.random = () => 0.9;
+  Math.random = () => 0.99;
   findButton(screen.tree, 'wheelSpin').props.onclick();
   assert.equal(screen.ui.wheel.spinning, false);
   assert.ok(findButton(screen.tree, 'wheelOrder'));
