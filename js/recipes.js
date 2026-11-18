@@ -485,7 +485,7 @@ export const STARTER_RECIPES = {
     'Gratiná en horno fuerte 15 a 20 minutos.',
   ]),
   'arroz-horno': r(2, [x('arroz', 120, 'arroz redondo'), x('cerdo', 150, 'cerdo (costillas en trozos)'), x('chorizo', 60, 'morcilla (o chorizo)'), x('garbanzos', 100, 'garbanzos cocidos'), x('papa', 200, 'papa', 200), x('tomate', 120, 'tomate rallado', 120), x('caldo', 300, 'caldo'), x('aceite', 30, 'aceite de oliva'), s('una cabeza de ajo, pimentón, azafrán y sal')], [
-    'Prendé el horno a 220 °C. Usá una cazuela ancha de barro (o una fuente) que vaya al horno: el arroz tiene que quedar en una capa fina.',
+    'Prendé el horno a 220 °C. Usá una cazuela ancha que vaya al fuego y al horno (de barro, de hierro o una paellera): el arroz tiene que quedar en una capa fina.',
     'En esa cazuela, dorá en el aceite las costillas, la morcilla y la papa en rodajas gruesas, y sacalas.',
     'En el mismo aceite, rehogá el tomate rallado con el pimentón y sumá el arroz y los garbanzos.',
     'Echá el caldo hirviendo con el azafrán y sal, y acomodá arriba la carne, la morcilla, las papas y la cabeza de ajo en el centro.',
