@@ -152,6 +152,8 @@ test('shouldShare: starter dishes only, in a group, with sharing on, never from 
   assert.equal(shouldShare(group({ sharing: false }), 'milanesas-pure', host), false);
   assert.equal(shouldShare(group(), 'd-lzx1k2', host), false); // a dish the user added
   assert.equal(shouldShare(group(), 'milanesas-pure', 'localhost'), false);
+  assert.equal(shouldShare(group(), 'milanesas-pure', 'quecomemoshoy-dev.github.io'), false, 'never from a PR preview (#44)');
+  assert.equal(shouldShare(group(), 'milanesas-pure', 'tenache.github.io'), true);
 });
 
 test('queueUnpick: a pick waiting behind another just leaves the queue; a sent one is taken back', () => {
@@ -278,10 +280,10 @@ test('flushQueue: a group replaced while a call is out (an import, another tab) 
   assert.deepEqual(other.queue, [{ op: 'unpick', pickId: 'pick000001' }]);
 });
 
-test('apiUrl: from GitHub Pages, the function on Netlify; on Netlify itself or localhost, its own address', () => {
+test('apiUrl: from GitHub Pages, the function on Netlify; on Netlify itself, localhost or the dev previews, its own address', () => {
   assert.equal(apiUrl({ hostname: 'tenache.github.io' }), `${FUNCTION_ORIGIN}/api/group`);
   assert.equal(FUNCTION_ORIGIN, 'https://quecomemoshoy89.netlify.app');
-  for (const hostname of ['quecomemoshoy89.netlify.app', 'deploy-preview-27--quecomemoshoy89.netlify.app', 'localhost', '127.0.0.1']) {
+  for (const hostname of ['quecomemoshoy89.netlify.app', 'deploy-preview-27--quecomemoshoy89.netlify.app', 'localhost', '127.0.0.1', 'quecomemoshoy-dev.github.io', 'someone.github.io']) {
     assert.equal(apiUrl({ hostname }), './api/group', hostname);
   }
   assert.equal(apiUrl(undefined), './api/group'); // node, in these tests

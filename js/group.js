@@ -21,11 +21,15 @@ export const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 // Netlify (#26). On Netlify itself (a deploy preview, with its own store) and
 // on localhost, the app calls the function on its own address.
 export const FUNCTION_ORIGIN = 'https://quecomemoshoy89.netlify.app';
+// Where the app is published: the function only accepts calls from its pages (CORS).
+export const APP_HOST = 'tenache.github.io';
+// The PR previews (#44): their own address, so they never share the real app's storage.
+export const PREVIEW_HOST = 'quecomemoshoy-dev.github.io';
 
 /** Where the group function is, seen from a page at `location` (none in the tests: the relative address). */
 export function apiUrl(location = globalThis.location) {
   const host = location?.hostname ?? '';
-  return host.endsWith('github.io') ? `${FUNCTION_ORIGIN}/api/group` : './api/group';
+  return host === APP_HOST ? `${FUNCTION_ORIGIN}/api/group` : './api/group';
 }
 
 // Only starter dishes are shared: every phone has them, under the same id.
@@ -127,9 +131,12 @@ export function cleanGroups(raw) {
 export const isLocalHost = (hostname) =>
   hostname === '' || hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname.endsWith('.localhost');
 
+/** A PR preview on the dev site (#44): test picks must never reach real groups. */
+export const isPreviewHost = (hostname) => hostname === PREVIEW_HOST;
+
 /** Should a meal of this dish be sent to the group? */
 export function shouldShare(group, dishId, hostname) {
-  return Boolean(group && group.sharing && STARTER_IDS.has(dishId) && !isLocalHost(hostname));
+  return Boolean(group && group.sharing && STARTER_IDS.has(dishId) && !isLocalHost(hostname) && !isPreviewHost(hostname));
 }
 
 /** Queues a pick. Returns its id, for queueUnpick(). */

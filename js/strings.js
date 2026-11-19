@@ -252,6 +252,7 @@ const STRINGS = {
     groupSharingHelp: 'Apagalo mientras probás la app: no se envía nada, y seguís viendo los 💞 del grupo.',
     groupWaiting: 'Elecciones esperando conexión para enviarse: {n}.',
     groupLocalhost: 'En esta computadora (localhost) la app no envía lo que elegís.',
+    groupPreviewHost: 'Esto es una vista previa (quecomemoshoy-dev): no envía lo que elegís y los grupos no andan. Tus datos de acá son aparte de la app de verdad.',
     groupLeave: 'Salir del grupo',
     groupLeaveConfirm: '¿Salir de "{name}"? Se borran de ese grupo los platos que elegiste.',
     groupNameMissing: 'Escribí tu nombre primero.',
