@@ -396,7 +396,28 @@ button.chip[aria-pressed='true'] {
 
 .pantry-done[hidden],
 .view-pantry:has(#pantry-search:focus) .pantry-done {
-  display: none; /* also while typing a search: with the keyboard up it would cover the results */
+  display: none; /* also while typing a search: with the keyboard up it would cover the results… */
+}
+
+/* …so then it's a small one next to the search, which stays in view with the keyboard up. */
+.pantry-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pantry-bar .search-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.pantry-done-inline[hidden],
+.view-pantry:not(:has(#pantry-search:focus)) .pantry-done-inline {
+  display: none;
+}
+
+.pantry-done-inline .btn {
+  white-space: nowrap;
 }
 
 .pantry-done .btn {
@@ -873,8 +894,49 @@ select {
 }
 
 .add-row {
+  position: relative;
   display: flex;
   gap: 8px;
+}
+
+/* Suggestions under the list's add box (#42): over the rows, so they never move. */
+.shop-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 6;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.shop-suggest[hidden] {
+  display: none;
+}
+
+.shop-suggest button {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  font-size: 1rem;
+}
+
+.shop-suggest button:hover,
+.shop-suggest button:focus-visible {
+  background: var(--chip);
 }
 
 .add-row input {

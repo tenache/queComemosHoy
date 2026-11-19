@@ -1089,8 +1089,8 @@ function pantryDoneDue() {
 
 /** Shows or hides the button after a change made in place (a chip tap). */
 function pantryEdited() {
-  const done = document.querySelector('.pantry-done');
-  if (done) done.hidden = !pantryDoneDue();
+  const due = pantryDoneDue();
+  for (const done of document.querySelectorAll('.pantry-done, .pantry-done-inline')) done.hidden = !due;
 }
 
 /**
@@ -1262,21 +1262,28 @@ function pantryChip(name) {
 /** One word with its plural ending (and the z → c of "arroz/arroces") taken off, to compare names: "tomates" and "tomate" → "tomat". */
 const singularWord = (w) => (w.length > 3 ? w.replace(/s$/, '').replace(/e$/, '').replace(/z$/, 'c') : w);
 
+/**
+ * Does an ingredient (its searchKey) match what's typed (its searchKey)? Word by word, each typed word
+ * the start of a word of the name, singular or plural alike: "aceit" finds aceite and aceite de oliva,
+ * "huevos" huevo, "arroces" arroz, "tomates triturados" tomate triturado. → 'exact', 'match' or null.
+ */
+function nameMatch(key, q) {
+  const typed = q.split(' ').filter(Boolean).map(singularWord);
+  const words = key.split(' ').map(singularWord);
+  if (q && words.join(' ') === typed.join(' ')) return 'exact';
+  return key.includes(q) || typed.every((w) => words.some((k) => k.startsWith(w))) ? 'match' : null;
+}
+
 /** Shows only the chips that match the search, and offers to add what isn't there. In place, so the keyboard stays up. */
 function filterPantry() {
   const q = searchKey(ui.pantrySearch);
-  // Each word without its plural ending too: "huevos" finds huevo, "arroces" arroz, "cebollas moradas" cebolla morada.
-  // Word by word, each typed word the start of a word of the name, singular or plural alike:
-  // "huevos" finds huevo, "arroces" arroz, "tomates triturados" tomate triturado, "fideo" fideos.
-  const typed = q.split(' ').filter(Boolean).map(singularWord);
   let shown = 0;
   let exact = false;
   for (const chip of document.querySelectorAll('.pantry-chips .chip')) {
-    const words = chip.dataset.key.split(' ').map(singularWord);
-    const match = chip.dataset.key.includes(q) || typed.every((w) => words.some((k) => k.startsWith(w)));
+    const match = nameMatch(chip.dataset.key, q);
     chip.hidden = !match;
     if (match) shown++;
-    if (q && words.join(' ') === typed.join(' ')) exact = true;
+    if (match === 'exact') exact = true;
   }
   const none = document.querySelector('.pantry-none');
   if (none) none.hidden = shown > 0;
@@ -1345,7 +1352,17 @@ function viewPantryHave() {
   const names = allIngredients(state);
   const have = names.filter((n) => pantryStatus(state, n) === 'have').length;
   return [
-    h('div', { class: 'pantry-bar' }, h('div', { class: 'search-row' }, search, clear)),
+    h(
+      'div',
+      { class: 'pantry-bar' },
+      h('div', { class: 'search-row' }, search, clear),
+      // While typing a search the floating "Listo" would sit over the results (keyboard up): it's up here instead.
+      h(
+        'div',
+        { class: 'pantry-done-inline', hidden: !pantryDoneDue() },
+        button(`🍳 ${t('pantryDoneShort')}`, doneWithPantry, 'primary small', { onpointerdown: (e) => e.preventDefault() }),
+      ),
+    ),
     h('div', { class: 'pantry-bulk' }, bulkButton('all'), bulkButton('nothing')),
     h(
       'p',
@@ -1376,32 +1393,70 @@ function viewPantryList() {
   // The rows in the order first shown; bought ones stay, crossed out, until you leave the list.
   ui.shopRows = [...new Set([...(ui.shopRows ?? []), ...state.missing])];
   const ingredients = allIngredients(state);
-  const addInput = h('input', {
-    id: 'shop-add',
-    type: 'text',
-    value: ui.shopAdd,
-    oninput: (e) => (ui.shopAdd = e.target.value),
-    placeholder: t('addItemPlaceholder'),
-    'aria-label': t('addItemPlaceholder'),
-    autocomplete: 'off',
-    autocapitalize: 'none',
-    enterKeyHint: 'done',
-  });
-  addInput.setAttribute('list', 'shop-suggestions'); // `list` is read-only as a property
-  const addItem = (e) => {
-    e.preventDefault();
-    const names = splitList(addInput.value);
+  // "huevos" typed is the "huevo" you already have: the same name, not a second one.
+  const known = (name) => ingredients.find((n) => nameMatch(searchKey(n), searchKey(name)) === 'exact') ?? name;
+  const addNames = (names) => {
     if (names.length === 0) return;
-    markMissing(state, names);
+    markMissing(state, names.map(known));
     ui.shopAdd = '';
     endPantryUndo();
     commit();
     $('shop-add')?.focus(); // to add another
   };
+  const suggest = h('ul', { class: 'shop-suggest', id: 'shop-suggest', role: 'listbox', 'aria-label': t('shopSuggestLabel'), hidden: true });
+  const addInput = h('input', {
+    id: 'shop-add',
+    type: 'text',
+    value: ui.shopAdd,
+    oninput: (e) => {
+      ui.shopAdd = e.target.value;
+      fillSuggestions();
+    },
+    onfocus: () => fillSuggestions(),
+    onblur: () => (suggest.hidden = true),
+    onkeydown: (e) => {
+      if (e.key === 'Escape') suggest.hidden = true;
+    },
+    placeholder: t('addItemPlaceholder'),
+    'aria-label': t('addItemPlaceholder'),
+    'aria-controls': 'shop-suggest',
+    autocomplete: 'off',
+    autocapitalize: 'none',
+    enterKeyHint: 'done',
+  });
+  // What you might mean, as you type ("aceit" → aceite, aceite de oliva): a tap adds it. Over the rows, so nothing moves.
+  function fillSuggestions() {
+    const q = searchKey(ui.shopAdd.split(',').at(-1) ?? '');
+    const found = q.length < 2 ? [] : ingredients.filter((n) => !state.missing.includes(n)).map((n) => [n, nameMatch(searchKey(n), q)]).filter(([, m]) => m);
+    // The name itself first, then those starting with what's typed, then the rest.
+    found.sort(([a, ma], [b, mb]) => (ma === 'exact' ? -1 : mb === 'exact' ? 1 : searchKey(b).startsWith(q) - searchKey(a).startsWith(q)));
+    suggest.replaceChildren(
+      ...found.slice(0, 6).map(([name]) =>
+        h(
+          'li',
+          { role: 'option' },
+          h(
+            'button',
+            {
+              type: 'button',
+              onpointerdown: (e) => e.preventDefault(), // the add box keeps the focus (and the keyboard)
+              onclick: () => addNames([...splitList(ui.shopAdd).slice(0, -1), name]),
+            },
+            h('span', null, `🛒 ${name}`),
+            pantryStatus(state, name) === 'have' && h('span', { class: 'muted' }, t('shopSuggestHave')),
+          ),
+        ),
+      ),
+    );
+    suggest.hidden = found.length === 0 || document.activeElement !== addInput;
+  }
+  const addItem = (e) => {
+    e.preventDefault();
+    addNames(splitList(addInput.value));
+  };
   const anyBought = ui.shopRows.some((n) => !state.missing.includes(n));
   return [
-    h('form', { class: 'add-row', onsubmit: addItem }, addInput, h('button', { type: 'submit', class: 'btn' }, t('add'))),
-    h('datalist', { id: 'shop-suggestions' }, ingredients.filter((n) => !state.missing.includes(n)).map((n) => h('option', { value: n }))),
+    h('form', { class: 'add-row', onsubmit: addItem }, addInput, h('button', { type: 'submit', class: 'btn' }, t('add')), suggest),
     // At the top, so it's in reach however long the list is; it and its line keep their size, so the rows never move.
     // Also on an empty list while "Compré todo" can still be taken back (left and came back to it).
     (ui.shopRows.length > 0 || pantryUndoFor('bought')) && h('div', { class: 'pantry-bulk' }, bulkButton('bought')),
