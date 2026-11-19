@@ -38,7 +38,7 @@ export function defaultState() {
     // params: this phone's tuning (params.js), {key: number}; empty = the defaults.
     // mood: the last answer to "¿Cómo está nuestro cocinero hoy?", {day: 'YYYY-MM-DD', id}; null = never asked.
     // groups: the friends' groups this phone is in (group.js, #23, #33); [] = none.
-    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null, groups: [] },
+    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null, groups: [], pantryAdded: [] },
     cuisines: [...DEFAULT_CUISINES], // the delivery wheel's slices
     deliveries: [], // {time, cuisine | null, manual?: true}
   };
@@ -342,12 +342,14 @@ export function normalizeState(input) {
     .map(cleanEvent);
   const settings = raw.settings && typeof raw.settings === 'object' ? raw.settings : {};
 
+  const missing = cleanNames(raw.missing);
   return {
     schemaVersion: SCHEMA_VERSION,
     dishes,
     events,
-    missing: cleanNames(raw.missing),
-    inStock: cleanNames(raw.inStock),
+    missing,
+    // Never on the list and in the pantry at once (#42): the list wins, as in markMissing.
+    inStock: cleanNames(raw.inStock).filter((n) => !missing.includes(n)),
     settings: {
       pantryMode: PANTRY_MODES.includes(settings.pantryMode) ? settings.pantryMode : 'lazy',
       variety: VARIETIES.includes(settings.variety) ? settings.variety : 'medium',
@@ -357,6 +359,8 @@ export function normalizeState(input) {
       params: cleanParams(settings.params),
       mood: cleanMood(settings.mood),
       groups: cleanGroups(settings.groups),
+      // Ingredients added from Despensa's search (#42), so they stay listed when not had (also optional, no schema step).
+      pantryAdded: cleanNames(settings.pantryAdded),
     },
     cuisines: cleanCuisines(raw.cuisines),
     deliveries: (Array.isArray(raw.deliveries) ? raw.deliveries : [])
@@ -393,9 +397,91 @@ export function markInStock(state, names) {
   }
 }
 
+// ---- Despensa (#42) ------------------------------------------------------
+
+/**
+ * One ingredient in the pantry: 'have', 'out' (on the shopping list) or
+ * 'none' (manual mode: not marked as had, not on the list either). The
+ * list and the manual pantry never share a name (markMissing/markInStock).
+ */
+export function pantryStatus(state, name) {
+  const n = normalizeName(name);
+  if (state.missing.includes(n)) return 'out';
+  if (state.settings.pantryMode === 'manual' && !state.inStock.includes(n)) return 'none';
+  return 'have';
+}
+
+/**
+ * A tap on an ingredient. Had: in lazy mode it goes on the list (there,
+ * "missing" is the list), in manual mode it's just not had any more.
+ * Not had, or on the list: had (and off the list).
+ */
+export function togglePantry(state, name) {
+  const n = normalizeName(name);
+  if (pantryStatus(state, n) !== 'have') markInStock(state, [n]);
+  else if (state.settings.pantryMode === 'manual') state.inStock = state.inStock.filter((x) => x !== n);
+  else markMissing(state, [n]);
+}
+
+/** What "Tengo todo" and "No tengo nada" change, to put it back with undoPantry(). */
+const pantryBefore = (state) => ({ pantryMode: state.settings.pantryMode, inStock: [...state.inStock], bought: [] });
+
+/** Would "Tengo todo" / "No tengo nada" change anything? */
+export const hasEverything = (state) => state.settings.pantryMode === 'lazy' && state.missing.length === 0;
+export const hasNothing = (state) => state.settings.pantryMode === 'manual' && state.inStock.length === 0;
+
+/**
+ * "Tengo todo": everything counts as available (lazy mode), so nothing is
+ * missing: what was on the shopping list is bought. Returns the undo.
+ */
+export function haveEverything(state) {
+  const before = { ...pantryBefore(state), bought: [...state.missing] };
+  state.settings.pantryMode = 'lazy';
+  markInStock(state, state.missing);
+  return before;
+}
+
+/** "No tengo nada": nothing counts as available (manual mode, nothing marked). The list stays. Returns the undo. */
+export function haveNothing(state) {
+  const before = pantryBefore(state);
+  state.settings.pantryMode = 'manual';
+  state.inStock = [];
+  return before;
+}
+
+/**
+ * Takes back "Tengo todo" or "No tengo nada": the mode and the manual
+ * pantry as they were, and what "Tengo todo" took off the shopping list
+ * back on it (only that: a row marked Comprado since stays bought). A
+ * name added to the list since stays on it, off the pantry.
+ */
+export function undoPantry(state, before) {
+  state.settings.pantryMode = PANTRY_MODES.includes(before.pantryMode) ? before.pantryMode : 'lazy';
+  markMissing(state, cleanNames(before.bought));
+  state.inStock = cleanNames(before.inStock).filter((n) => !state.missing.includes(n));
+}
+
+/** "Compré todo": everything on the list is bought. Returns the names, for undoBoughtAll(). */
+export function boughtAll(state) {
+  const names = [...state.missing];
+  markInStock(state, names);
+  return names;
+}
+
+/** Takes back "Compré todo": those names on the list again (and out of the pantry, as they were). */
+export function undoBoughtAll(state, names) {
+  markMissing(state, names);
+}
+
+/** Ingredients added from Despensa's search: listed even when not had nor on the list (the list's box doesn't: paper, batteries…). */
+export function addIngredients(state, names) {
+  const added = state.settings.pantryAdded ?? (state.settings.pantryAdded = []);
+  for (const n of cleanNames(names)) if (!added.includes(n)) added.push(n);
+}
+
 /** Every ingredient the app knows about, sorted. */
 export function allIngredients(state) {
-  const all = new Set([...state.missing, ...state.inStock]);
+  const all = new Set([...state.missing, ...state.inStock, ...(state.settings.pantryAdded ?? [])]);
   for (const dish of state.dishes) for (const i of dish.ingredients) all.add(i);
   return [...all].sort((a, b) => a.localeCompare(b, 'es'));
 }

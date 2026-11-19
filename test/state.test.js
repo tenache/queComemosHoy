@@ -196,6 +196,7 @@ test('normalizeState: a saved state survives a round trip through JSON', () => {
     params: { 'WHEEL.frequencyCap': 15 },
     mood: { day: '2026-11-13', id: 'yum' },
     groups: [{ code: 'ABCD2345', secret: 'f'.repeat(32), name: 'Ana', groupName: 'Familia', sharing: false, queue: [{ op: 'unpick', pickId: 'pick000001' }] }],
+    pantryAdded: ['quinoa'],
   };
   assert.deepEqual(normalizeState(JSON.parse(JSON.stringify(state))), state);
 });
@@ -234,7 +235,7 @@ test('normalizeState: repairs bad values and rejects what it cannot use', () => 
   });
   assert.deepEqual(fixed.events, [{ dishId: 'a', action: 'cook', time: NOW, missing: [] }]);
   assert.deepEqual(fixed.missing, ['pan']);
-  assert.deepEqual(fixed.settings, { pantryMode: 'lazy', variety: 'high', favoritesAsked: false, portions: 2, params: {}, mood: null, groups: [] });
+  assert.deepEqual(fixed.settings, { pantryMode: 'lazy', variety: 'high', favoritesAsked: false, portions: 2, params: {}, mood: null, groups: [], pantryAdded: [] });
 
   for (const bad of [null, [], 'x', {}, { schemaVersion: 1 }, { schemaVersion: 0, dishes: [] }]) {
     assert.throws(() => normalizeState(bad));
