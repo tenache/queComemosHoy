@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { APP_FILES, indexHtml, markTitle, run } from '../tools/dev-previews.mjs';
+import { APP_FILES, indexHtml, markManifest, markTitle, run } from '../tools/dev-previews.mjs';
 import { readServiceWorker } from '../tools/sw-version.js';
 
 const SRC = fileURLToPath(new URL('../', import.meta.url));
@@ -57,6 +57,18 @@ test('run: publishes a PR, lists it, removes closed ones, and a closed PR goes',
   run({ ...base, TARGET: 'pr', PR: '43', CLOSED: 'true', OPEN_PRS: '' });
   assert.ok(!existsSync(join(site, 'pr', '43')));
   assert.ok(readFileSync(join(site, 'index.html'), 'utf8').includes('No hay ninguno abierto'));
+});
+
+test('markManifest: an installed preview is named as one', () => {
+  const m = JSON.parse(markManifest(JSON.stringify({ name: '¿Qué comemos hoy?', short_name: 'Qué comemos', start_url: './' }), 'PR 43'));
+  assert.deepEqual(m, { name: 'PR 43 · ¿Qué comemos hoy?', short_name: 'PR 43', start_url: './' });
+});
+
+test('run: a PR just opened is kept even if the open list does not have it yet', () => {
+  const site = mkdtempSync(join(tmpdir(), 'qch-site-'));
+  run({ SRC, SITE: site, TARGET: 'pr', PR: '50', TITLE: 't', OPEN_PRS: '43' });
+  assert.ok(existsSync(join(site, 'pr', '50', 'index.html')));
+  assert.equal(JSON.parse(readFileSync(join(site, 'pr', '50', 'manifest.webmanifest'), 'utf8')).short_name, 'PR 50');
 });
 
 test('run: refuses a PR "number" that could point outside its folder', () => {

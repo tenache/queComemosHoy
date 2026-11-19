@@ -26,6 +26,14 @@ export function markTitle(html, label) {
   return html.replace(/<title>([^<]*)<\/title>/, (_, title) => `<title>${escapeHtml(label)} · ${title}</title>`);
 }
 
+/** The manifest with the preview's label in its names, so an installed preview isn't taken for the real app. */
+export function markManifest(text, label) {
+  const manifest = JSON.parse(text);
+  manifest.name = `${label} · ${manifest.name}`;
+  manifest.short_name = label;
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
 /** The site's front page: main, then the open PRs, newest first. `entries` = [{path, number?, title, branch, sha, updated}]. */
 export function indexHtml(entries) {
   const prs = entries.filter((e) => e.number != null).sort((a, b) => b.number - a.number);
@@ -101,6 +109,9 @@ export function run(env = process.env) {
     for (const name of APP_FILES) if (existsSync(join(SRC, name))) cpSync(join(SRC, name), join(dest, name), { recursive: true });
     const label = TARGET === 'pr' ? `PR ${PR}` : 'main';
     writeFileSync(join(dest, 'index.html'), markTitle(readFileSync(join(dest, 'index.html'), 'utf8'), label));
+    // Installed on the phone, it says it's a preview, next to the real app.
+    const manifest = join(dest, 'manifest.webmanifest');
+    if (existsSync(manifest)) writeFileSync(manifest, markManifest(readFileSync(manifest, 'utf8'), label));
     const updated = new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'short', timeStyle: 'short' });
     const info = { number: TARGET === 'pr' ? Number(PR) : null, title: TITLE ?? '', branch: BRANCH ?? '', sha: SHA ?? '', updated };
     writeFileSync(join(dest, 'preview.json'), `${JSON.stringify(info, null, 2)}\n`);
@@ -109,6 +120,7 @@ export function run(env = process.env) {
   // PRs closed while the workflow didn't run (or before it existed): their folders go too.
   if (OPEN_PRS != null && existsSync(join(SITE, 'pr'))) {
     const open = new Set(OPEN_PRS.split(',').filter(Boolean));
+    if (TARGET === 'pr' && CLOSED !== 'true') open.add(PR); // just opened: the list may not have it yet
     for (const n of readdirSync(join(SITE, 'pr'))) if (!open.has(n)) rmSync(join(SITE, 'pr', n), { recursive: true, force: true });
   }
 

@@ -3,8 +3,10 @@
 # quecomemoshoy-dev/quecomemoshoy-dev.github.io (GitHub Pages from its main),
 # on its own address so a preview never touches the real app's storage.
 #
-# Needs the secret DEV_PAGES_TOKEN: a fine-grained token for that repo only,
-# with Contents: read and write. Without it the job says so and stops.
+# Needs the secret DEV_PAGES_TOKEN: a fine-grained token with resource owner
+# quecomemoshoy-dev, that repo only, Contents: read and write (the org must
+# allow fine-grained tokens). Without it the job says so and stops. It
+# expires: when it does, the push fails with a 403 and needs a new one.
 
 name: Dev previews
 
@@ -15,10 +17,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# One publish at a time: each one pushes to the same site.
+# One run per preview: a newer push to the same PR (or main) replaces the one waiting or running. Runs for
+# different previews go side by side; a push that loses the race to another fetches and tries again.
 concurrency:
-  group: dev-previews
-  cancel-in-progress: false
+  group: dev-previews-${{ github.event.pull_request.number || 'main' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -27,8 +30,10 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # A PR from a fork gets no secrets: nothing to publish with.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # A PR from a fork gets no secrets: nothing to publish with. Outside PRs, only main is published (as /main/).
+    if: >-
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name != 'pull_request' && github.ref == 'refs/heads/main')
     env:
       DEV_REPO: quecomemoshoy-dev/quecomemoshoy-dev.github.io
       HAS_TOKEN: ${{ secrets.DEV_PAGES_TOKEN != '' }}
@@ -43,6 +48,14 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           path: src
+
+      - name: Check out the publishing script (from main, so PRs from before it still publish)
+        if: env.HAS_TOKEN == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: tools
+          sparse-checkout: tools
 
       - name: Check out the dev site
         if: env.HAS_TOKEN == 'true'
@@ -64,11 +77,12 @@ jobs:
             echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build the site
+      - name: Build and publish
         if: env.HAS_TOKEN == 'true'
+        working-directory: site
         env:
-          SRC: src
-          SITE: site
+          SRC: ../src
+          SITE: .
           TARGET: ${{ github.event_name == 'pull_request' && 'pr' || 'main' }}
           PR: ${{ github.event.pull_request.number }}
           TITLE: ${{ github.event.pull_request.title || 'main' }}
@@ -77,20 +91,24 @@ jobs:
           CLOSED: ${{ github.event.action == 'closed' }}
           OPEN_LIST: ${{ steps.open.outputs.list }}
           OPEN_OK: ${{ steps.open.outputs.ok }}
+          WHAT: ${{ github.event_name == 'pull_request' && format('PR {0} ({1})', github.event.pull_request.number, github.event.action) || format('main {0}', github.sha) }}
+        # The script from main; on PRs from before it existed on main (this one), from the PR itself.
         run: |
           if [ "$OPEN_OK" = "true" ]; then export OPEN_PRS="$OPEN_LIST"; fi
-          node src/tools/dev-previews.mjs
-
-      - name: Publish
-        if: env.HAS_TOKEN == 'true'
-        working-directory: site
-        env:
-          WHAT: ${{ github.event_name == 'pull_request' && format('PR {0} ({1})', github.event.pull_request.number, github.event.action) || format('main {0}', github.sha) }}
-        run: |
+          script=../tools/tools/dev-previews.mjs
+          [ -f "$script" ] || script=../src/tools/dev-previews.mjs
           git config user.name "qch dev previews"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then echo "Nothing changed."; exit 0; fi
-          git commit -q -m "Preview: $WHAT"
-          git push
-          echo "::notice::https://quecomemoshoy-dev.github.io/"
+          # Another preview may push in between: then start again from the site as it is now (the script can run twice).
+          for try in 1 2 3 4 5; do
+            node "$script"
+            git add -A
+            if git diff --cached --quiet; then echo "Nothing changed."; exit 0; fi
+            git commit -q -m "Preview: $WHAT"
+            if git push; then echo "::notice::https://quecomemoshoy-dev.github.io/"; exit 0; fi
+            git fetch -q origin
+            git reset -q --hard "origin/$(git rev-parse --abbrev-ref HEAD)"
+            sleep $((try * 3))
+          done
+          echo "::error::Could not push after 5 tries."
+          exit 1
