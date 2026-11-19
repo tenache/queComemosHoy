@@ -85,7 +85,7 @@ jobs:
         if: env.HAS_TOKEN == 'true'
         working-directory: site
         env:
-          WHAT: ${{ github.event_name == 'pull_request' && format('PR #{0} ({1})', github.event.pull_request.number, github.event.action) || format('main {0}', github.sha) }}
+          WHAT: ${{ github.event_name == 'pull_request' && format('PR {0} ({1})', github.event.pull_request.number, github.event.action) || format('main {0}', github.sha) }}
         run: |
           git config user.name "qch dev previews"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
