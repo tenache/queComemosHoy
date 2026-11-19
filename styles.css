@@ -418,6 +418,12 @@ button.chip[aria-pressed='true'] {
 
 .pantry-done-inline .btn {
   white-space: nowrap;
+  padding: 6px 10px;
+  font-size: min(0.9rem, 3.8vw); /* never heavier than the search beside it on a narrow phone */
+}
+
+.shop-suggest-note {
+  padding: 10px 12px;
 }
 
 .pantry-done .btn {

@@ -161,6 +161,7 @@ const ui = {
   pantryUndo: null, // {kind: 'all' | 'nothing' | 'bought', before, until}: the bulk action that can be taken back for a while
   shopRows: null, // the list's rows in the order shown: bought ones stay crossed out until you leave it
   shopAdd: '', // what's typed in the list's add box
+  pantryAllDone: false, // "Tengo todo" pressed since coming to Despensa: "Listo, ¿qué cocinamos?" shows anyway
   pantryStart: null, // Map ingredient → status when you came to Despensa: from PANTRY_DONE_AFTER changed ones on, "Listo, ¿qué cocinamos?" shows
 };
 
@@ -1079,11 +1080,18 @@ const PANTRY_DONE_AFTER = 2;
 
 const pantrySnapshot = () => new Map(allIngredients(state).map((n) => [n, pantryStatus(state, n)]));
 
-/** Enough ingredients differ from when you came (a tap and its undo don't count): time for "Listo, ¿qué cocinamos?". */
+/**
+ * Time for "Listo, ¿qué cocinamos?": "Tengo todo" was pressed, or enough ingredients differ from when you came
+ * (a tap and its undo don't count), or (Manual) you already have a couple marked as had, from this visit or an
+ * earlier one: coming back to a pantry you filled before shows it too.
+ */
 function pantryDoneDue() {
+  if (pantryUndoFor('all') || ui.pantryAllDone) return true; // "Tengo todo" says it all at once, however little it changed
+  const names = allIngredients(state);
+  if (state.settings.pantryMode === 'manual' && names.filter((n) => pantryStatus(state, n) === 'have').length >= PANTRY_DONE_AFTER) return true;
   const start = ui.pantryStart ?? new Map();
   let changed = 0;
-  for (const n of allIngredients(state)) if (pantryStatus(state, n) !== start.get(n) && ++changed >= PANTRY_DONE_AFTER) return true;
+  for (const n of names) if (pantryStatus(state, n) !== start.get(n) && ++changed >= PANTRY_DONE_AFTER) return true;
   return false;
 }
 
@@ -1140,6 +1148,7 @@ function bulkPantry(kind) {
   const before = BULK[kind].apply(state);
   // After "No tengo nada" you still have to tick what you have: count from there.
   if (kind === 'nothing') ui.pantryStart = pantrySnapshot();
+  ui.pantryAllDone = kind === 'all' || (kind !== 'nothing' && ui.pantryAllDone);
   const undo = { kind, before, since: Date.now(), until: Date.now() + PANTRY_UNDO_MS };
   ui.pantryUndo = undo;
   setTimeout(() => {
@@ -1168,6 +1177,7 @@ function undoBulkPantry(kind) {
   if (undo) {
     if (kind === 'bought') undoBoughtAll(state, undo.before);
     else undoPantry(state, undo.before);
+    if (kind === 'all') ui.pantryAllDone = false;
   }
   ui.pantryUndo = null;
   commit(); // also when it ran out meanwhile (a phone that slept): the button goes back to what it was
@@ -1394,7 +1404,9 @@ function viewPantryList() {
   ui.shopRows = [...new Set([...(ui.shopRows ?? []), ...state.missing])];
   const ingredients = allIngredients(state);
   // "huevos" typed is the "huevo" you already have: the same name, not a second one.
-  const known = (name) => ingredients.find((n) => nameMatch(searchKey(n), searchKey(name)) === 'exact') ?? name;
+  // The name exactly as typed wins if it exists ("fideos" when there's fideo and fideos).
+  const known = (name) =>
+    ingredients.find((n) => searchKey(n) === searchKey(name)) ?? ingredients.find((n) => nameMatch(searchKey(n), searchKey(name)) === 'exact') ?? name;
   const addNames = (names) => {
     if (names.length === 0) return;
     markMissing(state, names.map(known));
@@ -1413,9 +1425,15 @@ function viewPantryList() {
       fillSuggestions();
     },
     onfocus: () => fillSuggestions(),
-    onblur: () => (suggest.hidden = true),
+    onblur: (e) => {
+      if (!suggest.contains(e.relatedTarget)) suggest.hidden = true;
+    },
     onkeydown: (e) => {
       if (e.key === 'Escape') suggest.hidden = true;
+      if (e.key === 'ArrowDown' && !suggest.hidden) {
+        e.preventDefault();
+        suggest.querySelector('button')?.focus();
+      }
     },
     placeholder: t('addItemPlaceholder'),
     'aria-label': t('addItemPlaceholder'),
@@ -1427,11 +1445,18 @@ function viewPantryList() {
   // What you might mean, as you type ("aceit" → aceite, aceite de oliva): a tap adds it. Over the rows, so nothing moves.
   function fillSuggestions() {
     const q = searchKey(ui.shopAdd.split(',').at(-1) ?? '');
+    // The name as typed first, then its singular/plural, then those starting with what's typed, then the rest
+    // (a stable sort keeps them alphabetical within each).
+    const rank = (n, m) => (searchKey(n) === q ? 0 : m === 'exact' ? 1 : searchKey(n).startsWith(q) ? 2 : 3);
     const found = q.length < 2 ? [] : ingredients.filter((n) => !state.missing.includes(n)).map((n) => [n, nameMatch(searchKey(n), q)]).filter(([, m]) => m);
-    // The name itself first, then those starting with what's typed, then the rest.
-    found.sort(([a, ma], [b, mb]) => (ma === 'exact' ? -1 : mb === 'exact' ? 1 : searchKey(b).startsWith(q) - searchKey(a).startsWith(q)));
+    found.sort(([a, ma], [b, mb]) => rank(a, ma) - rank(b, mb));
+    // Already on the list by that name ("huevos" with huevo there): say so, instead of nothing happening.
+    const onList = q.length >= 2 && state.missing.find((n) => nameMatch(searchKey(n), q) === 'exact');
+    // Fewer on a short screen (keyboard up), so none hides under the keyboard.
+    const room = (window.visualViewport?.height ?? window.innerHeight) < 600 ? 4 : 6;
     suggest.replaceChildren(
-      ...found.slice(0, 6).map(([name]) =>
+      onList && h('li', { class: 'muted shop-suggest-note' }, t('shopSuggestOnList', { name: onList })),
+      ...found.slice(0, room).map(([name]) =>
         h(
           'li',
           { role: 'option' },
@@ -1440,6 +1465,18 @@ function viewPantryList() {
             {
               type: 'button',
               onpointerdown: (e) => e.preventDefault(), // the add box keeps the focus (and the keyboard)
+              // Keyboard: arrows move through the suggestions, Escape goes back to the box.
+              onkeydown: (e) => {
+                const items = [...suggest.querySelectorAll('button')];
+                const i = items.indexOf(e.currentTarget);
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  (items[i + (e.key === 'ArrowDown' ? 1 : -1)] ?? addInput).focus();
+                } else if (e.key === 'Escape') addInput.focus();
+              },
+              onblur: (e) => {
+                if (!suggest.contains(e.relatedTarget) && e.relatedTarget !== addInput) suggest.hidden = true;
+              },
               onclick: () => addNames([...splitList(ui.shopAdd).slice(0, -1), name]),
             },
             h('span', null, `🛒 ${name}`),
@@ -1448,7 +1485,7 @@ function viewPantryList() {
         ),
       ),
     );
-    suggest.hidden = found.length === 0 || document.activeElement !== addInput;
+    suggest.hidden = (found.length === 0 && !onList) || (document.activeElement !== addInput && !suggest.contains(document.activeElement));
   }
   const addItem = (e) => {
     e.preventDefault();
@@ -2807,7 +2844,10 @@ const TABS = [
 
 function switchTab(tab) {
   if (tab !== ui.tab) ui.shopRows = null; // Despensa: rows bought go when you leave the list
-  if (tab === 'pantry' && ui.tab !== 'pantry') ui.pantryStart = pantrySnapshot();
+  if (tab === 'pantry' && ui.tab !== 'pantry') {
+    ui.pantryStart = pantrySnapshot();
+    ui.pantryAllDone = false;
+  }
   ui.tab = tab;
   ui.editing = null;
   wheelView.close();

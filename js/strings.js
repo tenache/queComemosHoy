@@ -201,6 +201,7 @@ const STRINGS = {
     pantryDoneShort: 'Listo →',
     shopSuggestLabel: 'Ingredientes que coinciden',
     shopSuggestHave: 'lo tenés',
+    shopSuggestOnList: '«{name}» ya está en la lista.',
     pantryAddNew: '«{name}» no está. ¿Lo agregás?',
     pantryAddHave: 'Lo tengo',
     pantryAddToList: 'A la lista',
