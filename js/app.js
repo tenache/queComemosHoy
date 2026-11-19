@@ -47,6 +47,7 @@ import {
   friendsByDay,
   friendsPicks,
   isLocalHost,
+  isPreviewHost,
   joinGroup,
   leaveGroup,
   listGroup,
@@ -2258,6 +2259,7 @@ function groupSection() {
           button(t('groupJoin'), () => enterGroup(false), '', { disabled: busy }),
         ],
     isLocalHost(window.location.hostname) && h('p', { class: 'help' }, t('groupLocalhost')),
+    isPreviewHost(window.location.hostname) && h('p', { class: 'help' }, t('groupPreviewHost')),
     h('p', { class: 'help' }, t('groupPrivacy')),
     groupErrorLine(null),
   ];

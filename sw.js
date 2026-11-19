@@ -6,8 +6,12 @@
 // version; the page then shows "Hay una versión nueva" and the user reloads
 // into it.
 
-const VERSION = 'v1-6136cac1';
-const CACHE = `qch-shell-${VERSION}`;
+const VERSION = 'v1-cf3a4343';
+// One cache per address the app is served at (#44): the PR previews share one site, each in its own folder,
+// and must not delete each other's caches. The real app's caches before #44 had no "@…": they're its own.
+const SCOPE = new URL(self.registration.scope).pathname;
+const CACHE = `qch-shell-${VERSION}@${SCOPE}`;
+const mine = (key) => key.startsWith('qch-shell-') && (key.endsWith(`@${SCOPE}`) || !key.includes('@'));
 const SHELL = [
   './',
   './index.html',
@@ -41,7 +45,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('qch-shell-') && k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => mine(k) && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });

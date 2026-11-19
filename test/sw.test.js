@@ -33,3 +33,37 @@ test('sw.js: every app file is in SHELL, and every SHELL file exists', () => {
   }
   assert.ok(shell.includes(''), "SHELL includes './' (the start URL)");
 });
+
+// #44: the PR previews live on one site, each in its own folder. Installing one must not delete another's
+// cache, while the real app still clears its own old ones (including those from before "@scope").
+async function activateAt(scope, keys) {
+  const { readFileSync } = await import('node:fs');
+  const vm = await import('node:vm');
+  const handlers = {};
+  const deleted = [];
+  const sandbox = {
+    URL,
+    Promise,
+    self: { registration: { scope }, addEventListener: (type, fn) => (handlers[type] = fn), clients: { claim: async () => {} } },
+    caches: { keys: async () => keys, delete: async (k) => deleted.push(k) },
+  };
+  vm.runInNewContext(readFileSync(new URL('sw.js', ROOT), 'utf8'), sandbox);
+  let done;
+  handlers.activate({ waitUntil: (p) => (done = p) });
+  await done;
+  return deleted;
+}
+
+test('sw.js: on activate, deletes only its own old caches (one cache per folder, #44)', async () => {
+  const { version } = readServiceWorker();
+  const keys = [
+    `qch-shell-${version}@/pr/43/`, // this one
+    'qch-shell-v1-old@/pr/43/', // its old one
+    'qch-shell-v1-other@/pr/45/', // another preview's
+    'qch-shell-v1-old', // before #44 (only the real app had caches then)
+    'something-else',
+  ];
+  assert.deepEqual(await activateAt('https://quecomemoshoy-dev.github.io/pr/43/', keys), ['qch-shell-v1-old@/pr/43/', 'qch-shell-v1-old']);
+  const app = await activateAt('https://tenache.github.io/queComemosHoy/', ['qch-shell-v1-old', `qch-shell-${version}@/queComemosHoy/`, 'qch-shell-v1-x@/queComemosHoy/']);
+  assert.deepEqual(app, ['qch-shell-v1-old', 'qch-shell-v1-x@/queComemosHoy/']);
+});

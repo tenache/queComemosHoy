@@ -4,6 +4,11 @@
 
 [build]
   publish = "."
+  # Netlify only runs the friends' group function (the app is published by GitHub Pages, and PR previews are on
+  # quecomemoshoy-dev.github.io, #44): skip the build unless the function or what it needs changed. Exit 0 = skip.
+  # The function imports js/group.js, which imports js/dishes.js. With no earlier deploy to compare with, git diff
+  # fails and the build goes ahead.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- netlify/ netlify.toml package.json package-lock.json js/group.js js/dishes.js"
 
 [build.environment]
   # @netlify/blobs needs Node 22.12 or newer.

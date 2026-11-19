@@ -1,0 +1,96 @@
+# Dev previews (#44): every open PR at https://quecomemoshoy-dev.github.io/pr/<n>/,
+# main at /main/, and an index at /. The site is its own repo,
+# quecomemoshoy-dev/quecomemoshoy-dev.github.io (GitHub Pages from its main),
+# on its own address so a preview never touches the real app's storage.
+#
+# Needs the secret DEV_PAGES_TOKEN: a fine-grained token for that repo only,
+# with Contents: read and write. Without it the job says so and stops.
+
+name: Dev previews
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One publish at a time: each one pushes to the same site.
+concurrency:
+  group: dev-previews
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # A PR from a fork gets no secrets: nothing to publish with.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      DEV_REPO: quecomemoshoy-dev/quecomemoshoy-dev.github.io
+      HAS_TOKEN: ${{ secrets.DEV_PAGES_TOKEN != '' }}
+    steps:
+      - name: No token
+        if: env.HAS_TOKEN != 'true'
+        run: echo "::notice::DEV_PAGES_TOKEN is not set, so no dev preview was published."
+
+      - name: Check out the app
+        if: env.HAS_TOKEN == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: src
+
+      - name: Check out the dev site
+        if: env.HAS_TOKEN == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.DEV_REPO }}
+          token: ${{ secrets.DEV_PAGES_TOKEN }}
+          path: site
+
+      - name: Open PRs
+        id: open
+        if: env.HAS_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # If the list can't be had, nothing is removed (OPEN_PRS stays unset).
+        run: |
+          if prs=$(gh api "repos/${{ github.repository }}/pulls?state=open&per_page=100" --paginate --jq '.[].number'); then
+            echo "list=$(echo "$prs" | paste -sd, -)" >> "$GITHUB_OUTPUT"
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the site
+        if: env.HAS_TOKEN == 'true'
+        env:
+          SRC: src
+          SITE: site
+          TARGET: ${{ github.event_name == 'pull_request' && 'pr' || 'main' }}
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title || 'main' }}
+          BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CLOSED: ${{ github.event.action == 'closed' }}
+          OPEN_LIST: ${{ steps.open.outputs.list }}
+          OPEN_OK: ${{ steps.open.outputs.ok }}
+        run: |
+          if [ "$OPEN_OK" = "true" ]; then export OPEN_PRS="$OPEN_LIST"; fi
+          node src/tools/dev-previews.mjs
+
+      - name: Publish
+        if: env.HAS_TOKEN == 'true'
+        working-directory: site
+        env:
+          WHAT: ${{ github.event_name == 'pull_request' && format('PR #{0} ({1})', github.event.pull_request.number, github.event.action) || format('main {0}', github.sha) }}
+        run: |
+          git config user.name "qch dev previews"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "Nothing changed."; exit 0; fi
+          git commit -q -m "Preview: $WHAT"
+          git push
+          echo "::notice::https://quecomemoshoy-dev.github.io/"
