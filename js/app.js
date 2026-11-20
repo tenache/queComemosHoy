@@ -21,6 +21,7 @@ import {
   isMissing,
   logAfterMeal,
   logCardAction,
+  localDay,
   markInStock,
   markMissing,
   moodToday,
@@ -359,7 +360,7 @@ function mealName(main, side) {
 const mealIngredients = (main, side) => [...new Set([...main.ingredients, ...(side?.ingredients ?? [])])];
 
 function checkAfterMeal() {
-  if (ui.afterMeal || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.friends) return;
+  if (ui.afterMeal || ui.sheet || ui.sideSheet || ui.favorites || ui.friends) return;
   const due = afterMealDue(state.events, state.dishes, Date.now());
   if (!due) return;
   ui.afterMeal = { event: due.event, dishId: due.dish.id, selected: new Set(), verdict: null };
@@ -372,7 +373,7 @@ function checkAfterMeal() {
 function cook(action, missing = [], dishId = ui.currentId, sideId = dishId === ui.currentId ? ui.sideId : null) {
   const dish = dishById(dishId);
   if (!dish) return;
-  if (ui.cooked) dropCooked(); // picked in Comidas instead: the person said yes to replacing it (confirmReplaceCooked)
+  if (cookedToday()) dropCooked(); // picked in Comidas instead: the person said yes to replacing it (confirmReplaceCooked)
   const undo = planUndo(state, dish.id, missing, sideId);
   const event = logCardAction(state, dish.id, action, missing, Date.now(), sideId);
   // One pick, with one id, to every group sharing (#33), so "Deshacer" takes it back from all of them.
@@ -441,6 +442,15 @@ function undoCook() {
   dropCooked(); // back to the card that was showing
   commit();
   flushGroup();
+}
+
+/**
+ * "¡A cocinar!" of a meal logged today, or null. One from an earlier day (the screen left
+ * open overnight) only leaves the screen: it was a real meal, and stays in the log.
+ */
+function cookedToday() {
+  if (ui.cooked && localDay(ui.cooked.event.time) !== localDay(Date.now())) ui.cooked = null;
+  return ui.cooked;
 }
 
 /** Takes back the meal "¡A cocinar!" shows: its log, and its pick in the groups. */
@@ -832,8 +842,9 @@ let dishMarksDrawn = null;
 function viewDishes() {
   if (ui.editing) return viewDishForm();
   const picking = Boolean(ui.picking);
-  // Picking (#48), only the sides that go with some main: one is pinned, to pick the main on Hoy.
-  const sides = state.dishes.filter((d) => d.role === 'side' && (!picking || mainCandidates(state.dishes, d.id).length > 0));
+  // Picking (#48), only the sides a pin can show on Hoy: not hidden, and going with some main.
+  const pinnable = (d) => !d.neverShow && mainCandidates(state.dishes, d.id).length > 0;
+  const sides = state.dishes.filter((d) => d.role === 'side' && (!picking || pinnable(d)));
   const friends = friendsPicks(currentGroupLists(), Date.now());
   dishMarksDrawn = dishMarks();
   const row = (dish) => dishRow(dish, friends, picking);
@@ -2555,16 +2566,21 @@ function closePicker() {
  * the new pick replaces it (cook() takes it back, Deshacer and all). False: stay.
  */
 function confirmReplaceCooked() {
-  const cooked = ui.cooked && dishById(ui.cooked.dishId);
-  if (!cooked || window.confirm(t('pickReplaceCooked', { cooked: cooked.name }))) return true;
+  const cooked = cookedToday() && dishById(ui.cooked.dishId);
+  if (!cooked || window.confirm(t('pickReplaceCooked', { cooked: cooked.name.toLocaleLowerCase('es') }))) return true;
   document.activeElement?.blur(); // a tapped row keeps the focus, and would hold back the list's redraws
   return false;
 }
 
 /** A main picked from the list: straight to "¡A cocinar!", or first "¿Con qué?" if it takes a side. */
 function pickFromList(dish) {
+  const noSides = sidesOf(dish, state.dishes).length === 0;
+  if (noSides && cookedToday()?.dishId === dish.id) {
+    switchTab('today'); // the meal already logged: its "¡A cocinar!" stays, with Deshacer
+    return focusToday();
+  }
   if (!confirmReplaceCooked()) return;
-  if (sidesOf(dish, state.dishes).length === 0) return cook(ACTIONS.PICK, [], dish.id, null);
+  if (noSides) return cook(ACTIONS.PICK, [], dish.id, null);
   const suggested = pickSide(dish, scoringContext(), state.settings.variety);
   openSideSheet('pick', dish.id, suggested?.id ?? null);
 }
@@ -2572,7 +2588,7 @@ function pickFromList(dish) {
 /** A side chosen first: pin it, and show a main that goes with it on Hoy. */
 function pinFromList(side) {
   if (!confirmReplaceCooked()) return;
-  if (ui.cooked) {
+  if (cookedToday()) {
     dropCooked();
     commit();
     flushGroup();
