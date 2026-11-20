@@ -291,8 +291,9 @@ button.chip[aria-pressed='true'] {
   text-overflow: ellipsis;
 }
 
-/* The search stays in view while scrolling the chips (only it: small phones need the room). */
-.pantry-bar {
+/* The search stays in view while scrolling the chips, or Comidas' list (#46) (only it: small phones need the room). */
+.pantry-bar,
+.dish-bar {
   position: sticky;
   top: env(safe-area-inset-top);
   z-index: 3;
@@ -305,7 +306,8 @@ button.chip[aria-pressed='true'] {
   position: relative;
 }
 
-.search-row input {
+.search-row input,
+.search-row input[type='search'] {
   padding-right: 48px;
 }
 
@@ -1337,6 +1339,68 @@ input[type='number'] {
   top: 50%;
   right: 4px;
   transform: translateY(-50%);
+}
+
+/*
+ * Comidas (#46): the 💞 is a badge on the emoji's corner, so the name keeps its width on small phones
+ * (the 📝 and ⭐ already take room) and a row doesn't grow when a 💞 comes or goes. Its button is
+ * 36px, centred on the badge: big enough to tap, and the emoji's centre and the name still open the dish.
+ */
+.dish-row {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.dish-mark {
+  position: absolute;
+  top: calc(50% + 19px);
+  left: 34px; /* the badge's centre near the emoji's corner: border 1 + padding 8 + emoji 48 − 5, minus half of 36 */
+  width: 36px;
+  height: 36px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.dish-mark span {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--chip); /* lighter than the row in dark mode, so the badge shows */
+  box-shadow: 0 0 0 1px var(--line);
+  font-size: 16px;
+}
+
+.dish-list .list-name {
+  overflow-wrap: anywhere; /* a long word wraps instead of running over the "Oculta" badge */
+}
+
+.dish-bar {
+  margin-top: 6px;
+}
+
+/* A row's button or a chip reached with Tab stops below the sticky search, not behind it: on what takes the
+   focus. (Not scroll-padding on the page: the stuck search would sit inside it, and focusing it after ✕
+   scrolled the page up.) */
+.dish-list > .list-item button,
+.pantry-chips .chip {
+  scroll-margin-top: 70px;
+}
+
+.dish-list > .list-item[hidden],
+.dish-sides-heading[hidden] {
+  display: none;
+}
+
+.dish-none:empty {
+  margin: 0;
 }
 
 .list-heading {

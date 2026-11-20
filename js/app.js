@@ -61,6 +61,7 @@ import {
 import { STARTER_DISHES } from './dishes.js';
 import { formatItem, itemAmount, mealMacros, parseItem } from './nutrition.js';
 import { recipeFor } from './recipes.js';
+import { dishMatches, nameMatch, searchKey, wordsKey } from './search.js';
 import { STORAGE_KEY, loadState, readBackup, saveState } from './storage.js';
 import { lang, t } from './strings.js';
 import { createWheelView } from './wheel-view.js';
@@ -154,6 +155,7 @@ const ui = {
   friends: null, // dishId while the "💞 También lo eligieron" sheet is open (over the card, or over the list)
   keepCard: null, // the dish put on the card from Amigos (#40): the mood question, if it shows then, leaves it there
   pickerScroll: 0, // where the list was scrolled when its 💞 was tapped: closing who picked goes back there
+  dishSearch: '', // Comidas (#46): what's typed in the search
   groupInvited: null, // the code of the group whose invitation was copied ("Copiar")
   // Despensa (#42)
   pantryView: 'have', // 'have' (🧺 Qué tengo) or 'list' (🛒 Lista de compras)
@@ -760,27 +762,44 @@ function starButton(dish) {
   );
 }
 
-function dishRow(dish) {
+function dishRow(dish, friends) {
   const sideCount = dish.role === 'main' ? sidesOf(dish, state.dishes).length : 0;
   const sidesText = sideCount === 0 ? '' : ` · ${sideCount === 1 ? t('sidesCountOne') : t('sidesCount', { n: sideCount })}`;
+  const picked = friends.has(dish.id);
   return h(
     'li',
-    { class: 'list-item' },
+    { class: 'list-item', 'data-dish': dish.id },
     h(
-      'button',
-      { type: 'button', class: 'list-row', onclick: () => openDishForm(dish.id) },
-      h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
+      'span',
+      { class: 'dish-row' },
       h(
-        'span',
-        { class: 'list-text' },
-        h('span', { class: 'list-name' }, dish.name),
+        'button',
+        { type: 'button', class: 'list-row', onclick: () => openDishForm(dish.id) },
+        h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
         h(
           'span',
-          { class: 'list-meta' },
-          `⏱ ${t('minutes', { n: dish.cookMinutes })} · ${t('health')} ${Math.round(dish.health)} · ${t('yum')} ${Math.round(dish.yum)}${sidesText}`,
+          { class: 'list-text' },
+          h('span', { class: 'list-name' }, dish.name),
+          h(
+            'span',
+            { class: 'list-meta' },
+            `⏱ ${t('minutes', { n: dish.cookMinutes })} · ${t('health')} ${Math.round(dish.health)} · ${t('yum')} ${Math.round(dish.yum)}${sidesText}`,
+          ),
         ),
+        dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
       ),
-      dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
+      picked &&
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'pick-mark dish-mark',
+            'aria-label': t('friendsMarkOf', { name: dish.name }),
+            title: t('friendsMark'),
+            onclick: () => openFriends(dish.id),
+          },
+          h('span', { 'aria-hidden': 'true' }, '💞'),
+        ),
     ),
     recipeFor(dish) &&
       h(
@@ -792,16 +811,64 @@ function dishRow(dish) {
   );
 }
 
+/** The dishes with a 💞 in Comidas (#46). viewDishes() keeps what it drew, so a refresh redraws only when they change. */
+const dishMarks = () => JSON.stringify([...friendsPicks(currentGroupLists(), Date.now()).keys()].filter((id) => dishById(id)).sort());
+let dishMarksDrawn = null;
+
 function viewDishes() {
   if (ui.editing) return viewDishForm();
   const sides = state.dishes.filter((d) => d.role === 'side');
+  const friends = friendsPicks(currentGroupLists(), Date.now());
+  dishMarksDrawn = dishMarks();
+  const row = (dish) => dishRow(dish, friends);
+  const search = h('input', {
+    id: 'dish-search',
+    type: 'search',
+    value: ui.dishSearch,
+    placeholder: t('dishSearch'),
+    'aria-label': t('dishSearch'),
+    autocomplete: 'off',
+    autocapitalize: 'none',
+    enterKeyHint: 'search',
+    oninput: (e) => {
+      ui.dishSearch = e.target.value;
+      filterDishes();
+    },
+    onkeydown: (e) => {
+      if (e.key === 'Enter') e.target.blur(); // closes the phone's keyboard, to see the list
+    },
+  });
+  const clear = button('✕', () => {
+    ui.dishSearch = '';
+    search.value = '';
+    filterDishes();
+    search.focus({ preventScroll: true });
+  }, 'search-clear ghost', { 'aria-label': t('dishSearchClear') });
   return [
     h('header', { class: 'top' }, h('h1', null, t('dishesTitle'))),
     button(`＋ ${t('addDish')}`, () => openDishForm(null), 'primary wide'),
-    h('ul', { class: 'list' }, mainCandidates(state.dishes).map(dishRow)),
-    sides.length > 0 && h('h2', { class: 'list-heading' }, t('sidesSection')),
-    sides.length > 0 && h('ul', { class: 'list' }, sides.map(dishRow)),
+    h('div', { class: 'dish-bar' }, h('div', { class: 'search-row dish-search' }, search, clear)),
+    h('ul', { class: 'list dish-list' }, mainCandidates(state.dishes).map(row)),
+    sides.length > 0 && h('h2', { class: 'list-heading dish-sides-heading' }, t('sidesSection')),
+    sides.length > 0 && h('ul', { class: 'list dish-list dish-sides' }, sides.map(row)),
+    h('p', { class: 'muted dish-none', role: 'status' }), // always there, so a screen reader hears its text come
   ];
+}
+
+/** Shows only the dishes whose name matches the search (#46). In place, so the keyboard stays up. */
+function filterDishes() {
+  let shown = 0;
+  for (const item of document.querySelectorAll('#view .dish-list > .list-item')) {
+    const dish = dishById(item.dataset.dish);
+    item.hidden = !(dish && dishMatches(dish, ui.dishSearch));
+    if (!item.hidden) shown++;
+  }
+  const heading = document.querySelector('#view .dish-sides-heading');
+  if (heading) heading.hidden = !document.querySelector('#view .dish-sides > .list-item:not([hidden])');
+  const none = document.querySelector('#view .dish-none');
+  if (none) none.textContent = shown > 0 || wordsKey(ui.dishSearch) === '' ? '' : t('dishNoMatch');
+  const clear = document.querySelector('#view .dish-search .search-clear');
+  if (clear) clear.hidden = ui.dishSearch === '';
 }
 
 function openDishForm(id) {
@@ -1018,6 +1085,8 @@ function viewDishForm() {
     if (saved.role === 'main' && ui.pinnedSide === saved.id) ui.pinnedSide = null;
     ui.sideFor = null;
     ui.editing = null;
+    // It would be hidden by the search (#46): search for it instead (a name of only emoji or punctuation can't be searched).
+    if (!dishMatches(saved, ui.dishSearch)) ui.dishSearch = wordsKey(saved.name) ? saved.name : '';
     commit();
   };
 
@@ -1119,9 +1188,6 @@ function doneWithPantry() {
   switchTab('today');
 }
 
-/** For search: lowercase, no accents ("Azúcar" → "azucar"). */
-const searchKey = (text) => String(text).normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').trim();
-
 const PANTRY_MARK = { have: '✓', out: '🛒', none: '✗' };
 
 /** The bulk action that can still be taken back, if any. */
@@ -1156,7 +1222,7 @@ function bulkPantry(kind) {
     ui.pantryUndo = null;
     // Just the buttons: a redraw would close the keyboard and lose what's being typed. On an empty list, the
     // "Compré todo" row goes altogether (nothing left to buy), which is a redraw.
-    if (ui.tab === 'pantry' && ui.pantryView === 'list' && state.missing.length === 0) redrawPantryKeepingFocus();
+    if (ui.tab === 'pantry' && ui.pantryView === 'list' && state.missing.length === 0) redrawKeepingFocus();
     else refreshBulkButtons();
   }, PANTRY_UNDO_MS + 50);
   commit();
@@ -1216,9 +1282,9 @@ function pantryHint(view) {
   return state.settings.pantryMode === 'manual' ? t('pantryTapManual') : t('pantryTapLazy');
 }
 
-/** Redraws, keeping Despensa's search or add box focused with the cursor where it was (a redraw replaces them; their text is in `ui`). */
-function redrawPantryKeepingFocus() {
-  const typing = document.activeElement?.matches?.('#pantry-search, #shop-add') ? document.activeElement : null;
+/** Redraws, keeping a search or Despensa's add box focused with the cursor where it was (a redraw replaces them; their text is in `ui`). */
+function redrawKeepingFocus() {
+  const typing = document.activeElement?.matches?.('#pantry-search, #shop-add, #dish-search') ? document.activeElement : null;
   const caret = typing?.selectionStart;
   render();
   if (typing) {
@@ -1267,21 +1333,6 @@ function pantryChip(name) {
   };
   paint();
   return chip;
-}
-
-/** One word with its plural ending (and the z → c of "arroz/arroces") taken off, to compare names: "tomates" and "tomate" → "tomat". */
-const singularWord = (w) => (w.length > 3 ? w.replace(/s$/, '').replace(/e$/, '').replace(/z$/, 'c') : w);
-
-/**
- * Does an ingredient (its searchKey) match what's typed (its searchKey)? Word by word, each typed word
- * the start of a word of the name, singular or plural alike: "aceit" finds aceite and aceite de oliva,
- * "huevos" huevo, "arroces" arroz, "tomates triturados" tomate triturado. → 'exact', 'match' or null.
- */
-function nameMatch(key, q) {
-  const typed = q.split(' ').filter(Boolean).map(singularWord);
-  const words = key.split(' ').map(singularWord);
-  if (q && words.join(' ') === typed.join(' ')) return 'exact';
-  return key.includes(q) || typed.every((w) => words.some((k) => k.startsWith(w))) ? 'match' : null;
 }
 
 /** Shows only the chips that match the search, and offers to add what isn't there. In place, so the keyboard stays up. */
@@ -1779,7 +1830,15 @@ async function refreshGroupList(force = false) {
   if (shown() !== before && canRedrawSettings()) render();
   else if (ui.tab === 'today' && markBefore !== markNow && !moving && !ui.picking) render();
   else if (ui.tab === 'friends' && !ui.afterMeal && (friendsLoading || (friendsShown() !== friendsDrawn && !focusInView()))) render();
+  else if (dishMarksChanged()) render();
 }
+
+/**
+ * Comidas shows other 💞 than it drew (#46), and a redraw won't take a dish form, a search or an open
+ * sheet (a recipe scrolled down, who picked) from under someone: closing a sheet redraws anyway.
+ */
+const dishMarksChanged = () =>
+  ui.tab === 'dishes' && !ui.editing && !$('overlay').hasChildNodes() && dishMarks() !== dishMarksDrawn && !focusInView();
 
 /** Someone is on a button or field of the page: a redraw would drop them back to the top. */
 const focusInView = () => Boolean(document.activeElement?.closest?.('#view'));
@@ -1812,8 +1871,10 @@ function closeFriends() {
   render();
   const list = ui.picking && document.querySelector('#overlay .sheet');
   if (list) list.scrollTop = ui.pickerScroll;
-  const item = list?.querySelector(`.pick-item[data-dish="${CSS.escape(dishId)}"]`);
-  const back = list ? (item?.querySelector('.pick-mark') ?? item?.querySelector('.list-row')) : document.querySelector('.friends-mark');
+  const item = list
+    ? list.querySelector(`.pick-item[data-dish="${CSS.escape(dishId)}"]`)
+    : ui.tab === 'dishes' && document.querySelector(`#view .dish-list > .list-item[data-dish="${CSS.escape(dishId)}"]`); // Comidas (#46)
+  const back = item ? (item.querySelector('.pick-mark') ?? item.querySelector('.list-row')) : list ? null : document.querySelector('.friends-mark');
   back?.focus({ preventScroll: true });
 }
 
@@ -2852,7 +2913,7 @@ function switchTab(tab) {
   ui.editing = null;
   wheelView.close();
   if (tab === 'settings' || tab === 'friends') refreshGroupList(true);
-  if (tab === 'today') refreshGroupList();
+  if (tab === 'today' || tab === 'dishes') refreshGroupList();
   render();
   window.scrollTo(0, 0);
 }
@@ -2912,6 +2973,7 @@ function render() {
 
   renderTabs();
   if (ui.tab === 'pantry' && ui.pantryView === 'have') filterPantry(); // the search typed before a redraw
+  if (ui.tab === 'dishes' && !ui.editing) filterDishes(); // the same in Comidas (#46)
 
   const overlay = ui.afterMeal
     ? overlayAfterMeal()
@@ -3004,7 +3066,7 @@ window.addEventListener('storage', (e) => {
   ui.sideFor = null;
   checkAfterMeal();
   ui.pantryUndo = null; // its record is of the old state
-  if (!ui.editing) redrawPantryKeepingFocus(); // a plain render() off Despensa
+  if (!ui.editing) redrawKeepingFocus(); // a plain render() off Despensa
 });
 
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -3022,7 +3084,8 @@ document.addEventListener('visibilitychange', () => {
   checkAfterMeal();
   // Back on a new day: render() asks how the cook is (only on Hoy, so an open dish form keeps what was typed).
   const moodDue = !ui.mood && ui.tab === 'today' && moodToday(state, Date.now()) === null;
-  if (ui.afterMeal !== before || moodDue || (ui.tab === 'friends' && !ui.afterMeal)) render(); // Amigos: today may be yesterday now
+  // Amigos and Comidas' 💞 (#46): today may be yesterday now.
+  if (ui.afterMeal !== before || moodDue || (ui.tab === 'friends' && !ui.afterMeal) || dishMarksChanged()) render();
 });
 
 document.addEventListener('keydown', (e) => {
