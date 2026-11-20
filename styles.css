@@ -291,8 +291,9 @@ button.chip[aria-pressed='true'] {
   text-overflow: ellipsis;
 }
 
-/* The search stays in view while scrolling the chips (only it: small phones need the room). */
-.pantry-bar {
+/* The search stays in view while scrolling the chips, or Comidas' list (#46) (only it: small phones need the room). */
+.pantry-bar,
+.dish-bar {
   position: sticky;
   top: env(safe-area-inset-top);
   z-index: 3;
@@ -1351,8 +1352,8 @@ input[type='number'] {
   padding-right: 52px;
 }
 
-.dish-search {
-  margin: 12px 0 4px;
+.dish-bar {
+  margin-top: 6px;
 }
 
 .dish-list > .list-item[hidden],
