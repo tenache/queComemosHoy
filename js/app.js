@@ -774,7 +774,7 @@ function dishRow(dish, friends) {
       { class: 'dish-row' },
       h(
         'button',
-        { type: 'button', class: picked ? 'list-row marked' : 'list-row', onclick: () => openDishForm(dish.id) },
+        { type: 'button', class: 'list-row', onclick: () => openDishForm(dish.id) },
         h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
         h(
           'span',
@@ -793,12 +793,12 @@ function dishRow(dish, friends) {
           'button',
           {
             type: 'button',
-            class: 'star pick-mark',
+            class: 'pick-mark dish-mark',
             'aria-label': t('friendsMarkOf', { name: dish.name }),
             title: t('friendsMark'),
             onclick: () => openFriends(dish.id),
           },
-          '💞',
+          h('span', { 'aria-hidden': 'true' }, '💞'),
         ),
     ),
     recipeFor(dish) &&
@@ -851,7 +851,7 @@ function viewDishes() {
     h('ul', { class: 'list dish-list' }, mainCandidates(state.dishes).map(row)),
     sides.length > 0 && h('h2', { class: 'list-heading dish-sides-heading' }, t('sidesSection')),
     sides.length > 0 && h('ul', { class: 'list dish-list dish-sides' }, sides.map(row)),
-    h('p', { class: 'muted dish-none', hidden: true }, t('dishNoMatch')),
+    h('p', { class: 'muted dish-none', role: 'status', hidden: true }, t('dishNoMatch')),
   ];
 }
 
@@ -1085,7 +1085,8 @@ function viewDishForm() {
     if (saved.role === 'main' && ui.pinnedSide === saved.id) ui.pinnedSide = null;
     ui.sideFor = null;
     ui.editing = null;
-    if (!dishMatches(saved, ui.dishSearch)) ui.dishSearch = saved.name; // it would be hidden by the search (#46)
+    // It would be hidden by the search (#46): search for it instead (a name of only emoji or punctuation can't be searched).
+    if (!dishMatches(saved, ui.dishSearch)) ui.dishSearch = wordsKey(saved.name) ? saved.name : '';
     commit();
   };
 

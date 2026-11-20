@@ -306,7 +306,8 @@ button.chip[aria-pressed='true'] {
   position: relative;
 }
 
-.search-row input {
+.search-row input,
+.search-row input[type='search'] {
   padding-right: 48px;
 }
 
@@ -1340,7 +1341,11 @@ input[type='number'] {
   transform: translateY(-50%);
 }
 
-/* Comidas (#46): the same 💞, over the end of the row (not the 📝 and ⭐ after it). */
+/*
+ * Comidas (#46): the 💞 is a badge on the emoji's corner, so the name keeps its width on small phones
+ * (the 📝 and ⭐ already take room) and a row doesn't grow when a 💞 comes or goes. Its button is
+ * 44px, centred on the badge.
+ */
 .dish-row {
   position: relative;
   flex: 1;
@@ -1348,12 +1353,42 @@ input[type='number'] {
   display: flex;
 }
 
-.dish-row .list-row.marked {
-  padding-right: 52px;
+.dish-mark {
+  position: absolute;
+  top: calc(50% + 14px);
+  left: 33px; /* the badge's centre on the emoji's corner: border 1 + padding 8 + emoji 48 − 2, minus half of 44 */
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.dish-mark span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+  font-size: 14px;
+}
+
+.dish-list .list-name {
+  overflow-wrap: anywhere; /* a long word wraps instead of running over the "Oculta" badge */
 }
 
 .dish-bar {
   margin-top: 6px;
+}
+
+/* A row reached with Tab stops below the sticky search, not behind it. */
+html:has(.view-dishes .dish-bar, .view-pantry .pantry-bar) {
+  scroll-padding-top: 70px;
 }
 
 .dish-list > .list-item[hidden],
