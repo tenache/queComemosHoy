@@ -21,6 +21,7 @@ import {
   isMissing,
   logAfterMeal,
   logCardAction,
+  localDay,
   markInStock,
   markMissing,
   moodToday,
@@ -136,7 +137,7 @@ const ui = {
   recipe: null, // {mainId, sideId} while the recipe sheet is open
   cooked: null, // {dishId, event, undo, shareId, sharedWith: [codes]} while the "¡A cocinar!" panel shows
   sheet: null, // {dishId, sideId, selected:Set} while the 🛒 sheet is open
-  picking: false, // while the "pick from the whole list" sheet is open
+  picking: null, // Comidas in pick mode (#48): {from: 'today' | 'dishes', search: Comidas' search before, from Hoy}
   readOnly: false, // stored data is from a newer app version: never save over it
   afterMeal: null, // {event, dishId, selected:Set, verdict} while the question shows
   editing: null, // {id} (id null = new dish) while the dish form shows
@@ -154,7 +155,6 @@ const ui = {
   openGroups: new Set(), // the codes of the groups opened in Ajustes, to see their members
   friends: null, // dishId while the "💞 También lo eligieron" sheet is open (over the card, or over the list)
   keepCard: null, // the dish put on the card from Amigos (#40): the mood question, if it shows then, leaves it there
-  pickerScroll: 0, // where the list was scrolled when its 💞 was tapped: closing who picked goes back there
   dishSearch: '', // Comidas (#46): what's typed in the search
   groupInvited: null, // the code of the group whose invitation was copied ("Copiar")
   // Despensa (#42)
@@ -360,7 +360,7 @@ function mealName(main, side) {
 const mealIngredients = (main, side) => [...new Set([...main.ingredients, ...(side?.ingredients ?? [])])];
 
 function checkAfterMeal() {
-  if (ui.afterMeal || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.friends) return;
+  if (ui.afterMeal || ui.sheet || ui.sideSheet || ui.favorites || ui.friends) return;
   const due = afterMealDue(state.events, state.dishes, Date.now());
   if (!due) return;
   ui.afterMeal = { event: due.event, dishId: due.dish.id, selected: new Set(), verdict: null };
@@ -373,6 +373,7 @@ function checkAfterMeal() {
 function cook(action, missing = [], dishId = ui.currentId, sideId = dishId === ui.currentId ? ui.sideId : null) {
   const dish = dishById(dishId);
   if (!dish) return;
+  if (cookedToday()) dropCooked(); // picked in Comidas instead: the person said yes to replacing it (confirmReplaceCooked)
   const undo = planUndo(state, dish.id, missing, sideId);
   const event = logCardAction(state, dish.id, action, missing, Date.now(), sideId);
   // One pick, with one id, to every group sharing (#33), so "Deshacer" takes it back from all of them.
@@ -382,10 +383,13 @@ function cook(action, missing = [], dishId = ui.currentId, sideId = dishId === u
   ui.cooked = { dishId: dish.id, event, undo, shareId, sharedWith: sharedWith.map((g) => g.code) };
   ui.sheet = null;
   ui.sideSheet = null;
-  ui.picking = false;
   ui.pinnedSide = null; // the pin was for tonight's meal
   commit();
   flushGroup();
+  if (ui.picking) {
+    switchTab('today'); // picked in Comidas (#48): "¡A cocinar!" is on Hoy
+    focusToday();
+  }
 }
 
 /**
@@ -435,12 +439,26 @@ function reject(action, missing = []) {
 }
 
 function undoCook() {
+  dropCooked(); // back to the card that was showing
+  commit();
+  flushGroup();
+}
+
+/**
+ * "¡A cocinar!" of a meal logged today, or null. One from an earlier day (the screen left
+ * open overnight) only leaves the screen: it was a real meal, and stays in the log.
+ */
+function cookedToday() {
+  if (ui.cooked && localDay(ui.cooked.event.time) !== localDay(Date.now())) ui.cooked = null;
+  return ui.cooked;
+}
+
+/** Takes back the meal "¡A cocinar!" shows: its log, and its pick in the groups. */
+function dropCooked() {
   const { event, undo, shareId, sharedWith } = ui.cooked;
   undoCardAction(state, event, undo);
   for (const group of state.settings.groups) if (shareId && sharedWith.includes(group.code)) queueUnpick(group, shareId);
-  ui.cooked = null; // back to the card that was showing
-  commit();
-  flushGroup();
+  ui.cooked = null;
 }
 
 function openMissingSheet() {
@@ -617,7 +635,7 @@ function viewToday() {
         h('h2', null, t('noDishesTitle')),
         h('p', null, t('noDishesText')),
         button(t('goToDishes'), () => switchTab('dishes'), 'primary'),
-        state.dishes.length > 0 && button(`📖 ${t('pickFromList')}`, openPicker),
+        state.dishes.length > 0 && button(`📖 ${t('pickFromList')}`, openPicker, 'pick-open'),
       ),
       wheelButton('wide'),
     ];
@@ -705,7 +723,7 @@ function viewToday() {
       h('button', { type: 'button', class: 'action cart', onclick: openMissingSheet }, h('span', { 'aria-hidden': 'true' }, '🛒'), t('actionMissing')),
       h('button', { type: 'button', class: 'action yes', onclick: swipeRight }, h('span', { 'aria-hidden': 'true' }, '👉'), t('actionCook')),
     ),
-    h('div', { class: 'row more' }, button(`📖 ${t('pickFromList')}`, openPicker), wheelButton()),
+    h('div', { class: 'row more' }, button(`📖 ${t('pickFromList')}`, openPicker, 'pick-open'), wheelButton()),
     h('p', { class: 'hint' }, t('swipeHint')),
   ];
 }
@@ -762,7 +780,7 @@ function starButton(dish) {
   );
 }
 
-function dishRow(dish, friends) {
+function dishRow(dish, friends, picking) {
   const sideCount = dish.role === 'main' ? sidesOf(dish, state.dishes).length : 0;
   const sidesText = sideCount === 0 ? '' : ` · ${sideCount === 1 ? t('sidesCountOne') : t('sidesCount', { n: sideCount })}`;
   const picked = friends.has(dish.id);
@@ -774,7 +792,12 @@ function dishRow(dish, friends) {
       { class: 'dish-row' },
       h(
         'button',
-        { type: 'button', class: 'list-row', onclick: () => openDishForm(dish.id) },
+        {
+          type: 'button',
+          class: 'list-row',
+          'aria-describedby': picking ? (dish.role === 'side' ? 'dish-sides-help' : 'pick-help') : null,
+          onclick: () => (!picking ? openDishForm(dish.id) : dish.role === 'side' ? pinFromList(dish) : pickFromList(dish)),
+        },
         h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
         h(
           'span',
@@ -787,6 +810,7 @@ function dishRow(dish, friends) {
           ),
         ),
         dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
+        picking && dish.role === 'side' && h('span', { class: 'badge' }, `📌 ${t('pinBadge')}`), // a tap pins it, not logs it
       ),
       picked &&
         h(
@@ -817,16 +841,19 @@ let dishMarksDrawn = null;
 
 function viewDishes() {
   if (ui.editing) return viewDishForm();
-  const sides = state.dishes.filter((d) => d.role === 'side');
+  const picking = Boolean(ui.picking);
+  // Picking (#48), only the sides a pin can show on Hoy: not hidden, and going with some main.
+  const pinnable = (d) => !d.neverShow && mainCandidates(state.dishes, d.id).length > 0;
+  const sides = state.dishes.filter((d) => d.role === 'side' && (!picking || pinnable(d)));
   const friends = friendsPicks(currentGroupLists(), Date.now());
   dishMarksDrawn = dishMarks();
-  const row = (dish) => dishRow(dish, friends);
+  const row = (dish) => dishRow(dish, friends, picking);
   const search = h('input', {
     id: 'dish-search',
     type: 'search',
     value: ui.dishSearch,
-    placeholder: t('dishSearch'),
-    'aria-label': t('dishSearch'),
+    placeholder: picking ? t('pickSearch') : t('dishSearch'), // the mode, where the eye is once scrolled down
+    'aria-label': picking ? t('pickSearch') : t('dishSearch'),
     autocomplete: 'off',
     autocapitalize: 'none',
     enterKeyHint: 'search',
@@ -845,11 +872,24 @@ function viewDishes() {
     search.focus({ preventScroll: true });
   }, 'search-clear ghost', { 'aria-label': t('dishSearchClear') });
   return [
-    h('header', { class: 'top' }, h('h1', null, t('dishesTitle'))),
-    button(`＋ ${t('addDish')}`, () => openDishForm(null), 'primary wide'),
-    h('div', { class: 'dish-bar' }, h('div', { class: 'search-row dish-search' }, search, clear)),
+    h('header', { class: 'top' }, h('h1', { id: 'dish-title', tabIndex: -1 }, picking ? t('pickTitle') : t('dishesTitle'))),
+    picking
+      ? h('p', { class: 'help', id: 'pick-help' }, t('pickHelp'))
+      : h(
+          'div',
+          { class: 'row' },
+          button(`＋ ${t('addDish')}`, () => openDishForm(null), 'primary'),
+          mainCandidates(state.dishes).length > 0 && button(`🍽️ ${t('pickHere')}`, openPicker, 'pick-enter'),
+        ),
+    h(
+      'div',
+      { class: 'dish-bar' },
+      h('div', { class: 'search-row dish-search' }, search, clear),
+      picking && button(t('cancel'), closePicker, 'pick-cancel'), // in reach wherever the list is scrolled
+    ),
     h('ul', { class: 'list dish-list' }, mainCandidates(state.dishes).map(row)),
-    sides.length > 0 && h('h2', { class: 'list-heading dish-sides-heading' }, t('sidesSection')),
+    sides.length > 0 && h('h2', { class: 'list-heading dish-sides-heading' }, picking ? t('pickSidesFirst') : t('sidesSection')),
+    sides.length > 0 && picking && h('p', { class: 'help dish-sides-help', id: 'dish-sides-help' }, t('pickSidesFirstHelp')),
     sides.length > 0 && h('ul', { class: 'list dish-list dish-sides' }, sides.map(row)),
     h('p', { class: 'muted dish-none', role: 'status' }), // always there, so a screen reader hears its text come
   ];
@@ -863,8 +903,8 @@ function filterDishes() {
     item.hidden = !(dish && dishMatches(dish, ui.dishSearch));
     if (!item.hidden) shown++;
   }
-  const heading = document.querySelector('#view .dish-sides-heading');
-  if (heading) heading.hidden = !document.querySelector('#view .dish-sides > .list-item:not([hidden])');
+  const anySide = Boolean(document.querySelector('#view .dish-sides > .list-item:not([hidden])'));
+  for (const el of document.querySelectorAll('#view .dish-sides-heading, #view .dish-sides-help')) el.hidden = !anySide;
   const none = document.querySelector('#view .dish-none');
   if (none) none.textContent = shown > 0 || wordsKey(ui.dishSearch) === '' ? '' : t('dishNoMatch');
   const clear = document.querySelector('#view .dish-search .search-clear');
@@ -1622,7 +1662,7 @@ async function importData(file) {
   state = next;
   applyTuning();
   wheelView.close();
-  Object.assign(ui, { currentId: null, cooked: null, sheet: null, picking: false, afterMeal: null, editing: null });
+  Object.assign(ui, { currentId: null, cooked: null, sheet: null, picking: null, afterMeal: null, editing: null });
   commit();
   window.alert(t('importOk'));
 }
@@ -1824,11 +1864,10 @@ async function refreshGroupList(force = false) {
     else if (res.ok) setGroupList(group, res.data);
   }
   const markNow = ui.currentId && friendsPicks(currentGroupLists(), Date.now()).has(ui.currentId);
-  // Redraw only what changed where it shows: never under someone typing, nor a card being dragged or
-  // flying out, nor the open list (it would jump back to the top; its 💞 are current when it opens again).
+  // Redraw only what changed where it shows: never under someone typing, nor a card being dragged or flying out.
   const moving = document.querySelector('.card.dragging, .card.flying');
   if (shown() !== before && canRedrawSettings()) render();
-  else if (ui.tab === 'today' && markBefore !== markNow && !moving && !ui.picking) render();
+  else if (ui.tab === 'today' && markBefore !== markNow && !moving) render();
   else if (ui.tab === 'friends' && !ui.afterMeal && (friendsLoading || (friendsShown() !== friendsDrawn && !focusInView()))) render();
   else if (dishMarksChanged()) render();
 }
@@ -1855,26 +1894,21 @@ function setGroupList(group, data) {
 }
 
 function openFriends(dishId) {
-  ui.pickerScroll = ui.picking ? (document.querySelector('#overlay .sheet')?.scrollTop ?? 0) : 0;
   ui.friends = dishId;
   render();
   document.querySelector('#overlay .sheet-foot button')?.focus();
 }
 
 /**
- * Back to what was under who picked: the card, or the list where it was
- * scrolled, on the 💞 that opened it (or its row, if that 💞 is gone now).
+ * Back to what was under who picked: the card, or Comidas (#46), on the 💞
+ * that opened it (or its row, if that 💞 is gone now).
  */
 function closeFriends() {
   const dishId = ui.friends;
   ui.friends = null;
   render();
-  const list = ui.picking && document.querySelector('#overlay .sheet');
-  if (list) list.scrollTop = ui.pickerScroll;
-  const item = list
-    ? list.querySelector(`.pick-item[data-dish="${CSS.escape(dishId)}"]`)
-    : ui.tab === 'dishes' && document.querySelector(`#view .dish-list > .list-item[data-dish="${CSS.escape(dishId)}"]`); // Comidas (#46)
-  const back = item ? (item.querySelector('.pick-mark') ?? item.querySelector('.list-row')) : list ? null : document.querySelector('.friends-mark');
+  const item = ui.tab === 'dishes' && document.querySelector(`#view .dish-list > .list-item[data-dish="${CSS.escape(dishId)}"]`);
+  const back = item ? (item.querySelector('.pick-mark') ?? item.querySelector('.list-row')) : document.querySelector('.friends-mark');
   back?.focus({ preventScroll: true });
 }
 
@@ -2493,23 +2527,73 @@ function overlayMissing() {
   );
 }
 
+/**
+ * "Elegir de la lista" on Hoy, and 🍽️ Elegir in Comidas: Comidas in pick mode (#48), with its search.
+ * From Hoy the search starts empty, so one typed earlier doesn't hide what you came to pick.
+ */
 function openPicker() {
-  ui.picking = true;
+  const from = ui.tab;
+  const search = ui.dishSearch;
+  if (from !== 'dishes') {
+    ui.dishSearch = '';
+    switchTab('dishes');
+  }
+  ui.picking = { from, search };
   render();
+  $('dish-title')?.focus({ preventScroll: true });
+}
+
+/** Leaves pick mode. Entered from Hoy, Comidas gets back the search it had: the one typed to pick was for that. */
+function endPicking() {
+  if (ui.picking?.from === 'today') ui.dishSearch = ui.picking.search;
+  ui.picking = null;
+}
+
+/** Cancelar or Escape: back to where pick mode was entered from. */
+function closePicker() {
+  const from = ui.picking.from;
+  endPicking();
+  if (from !== 'dishes') {
+    switchTab('today');
+    return document.querySelector('#view .pick-open')?.focus();
+  }
+  render();
+  document.querySelector('#view .pick-enter')?.focus({ preventScroll: true });
+}
+
+/**
+ * Picking in Comidas while "¡A cocinar!" shows a meal already logged (#48): asks before
+ * the new pick replaces it (cook() takes it back, Deshacer and all). False: stay.
+ */
+function confirmReplaceCooked() {
+  const cooked = cookedToday() && dishById(ui.cooked.dishId);
+  if (!cooked || window.confirm(t('pickReplaceCooked', { cooked: cooked.name.toLocaleLowerCase('es') }))) return true;
+  document.activeElement?.blur(); // a tapped row keeps the focus, and would hold back the list's redraws
+  return false;
 }
 
 /** A main picked from the list: straight to "¡A cocinar!", or first "¿Con qué?" if it takes a side. */
 function pickFromList(dish) {
-  if (sidesOf(dish, state.dishes).length === 0) return cook(ACTIONS.PICK, [], dish.id, null);
+  const noSides = sidesOf(dish, state.dishes).length === 0;
+  if (noSides && cookedToday()?.dishId === dish.id) {
+    switchTab('today'); // the meal already logged: its "¡A cocinar!" stays, with Deshacer
+    return focusToday();
+  }
+  if (!confirmReplaceCooked()) return;
+  if (noSides) return cook(ACTIONS.PICK, [], dish.id, null);
   const suggested = pickSide(dish, scoringContext(), state.settings.variety);
-  ui.picking = false;
   openSideSheet('pick', dish.id, suggested?.id ?? null);
 }
 
-/** A side chosen first: pin it, and show a main that goes with it. */
+/** A side chosen first: pin it, and show a main that goes with it on Hoy. */
 function pinFromList(side) {
+  if (!confirmReplaceCooked()) return;
+  if (cookedToday()) {
+    dropCooked();
+    commit();
+    flushGroup();
+  }
   ui.pinnedSide = side.id;
-  ui.picking = false;
   const current = dishById(ui.currentId);
   if (current && sidesOf(current, state.dishes).some((d) => d.id === side.id)) {
     ui.sideId = side.id;
@@ -2517,73 +2601,16 @@ function pinFromList(side) {
   } else {
     ui.currentId = null;
   }
-  ui.cooked = null;
-  render();
+  switchTab('today');
+  focusToday();
 }
 
-/**
- * The whole dish list, "never show" ones included. Tapping one logs it as
- * tonight's meal; its 💞, over the end of the row but not inside it (#28),
- * opens who picked it.
- */
-function overlayPicker() {
-  // Sides that go with at least one main can be chosen first.
-  const pinnable = state.dishes.filter((d) => d.role === 'side' && mainCandidates(state.dishes, d.id).length > 0);
-  const friends = friendsPicks(currentGroupLists(), Date.now());
-  return sheet(
-    `📖 ${t('pickTitle')}`,
-    h('p', { class: 'help' }, t('pickHelp')),
-    h(
-      'ul',
-      { class: 'list' },
-      mainCandidates(state.dishes).map((dish) =>
-        h(
-          'li',
-          { class: 'pick-item', 'data-dish': dish.id },
-          h(
-            'button',
-            { type: 'button', class: friends.has(dish.id) ? 'list-row marked' : 'list-row', onclick: () => pickFromList(dish) },
-            h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
-            h(
-              'span',
-              { class: 'list-text' },
-              h('span', { class: 'list-name' }, dish.name),
-              h('span', { class: 'list-meta' }, `⏱ ${t('minutes', { n: dish.cookMinutes })}`),
-            ),
-            dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
-          ),
-          friends.has(dish.id) &&
-            h(
-              'button',
-              {
-                type: 'button',
-                class: 'star pick-mark',
-                'aria-label': t('friendsMarkOf', { name: dish.name }),
-                title: t('friendsMark'),
-                onclick: () => openFriends(dish.id),
-              },
-              '💞',
-            ),
-        ),
-      ),
-    ),
-    pinnable.length > 0 && h('p', { class: 'label' }, t('pickSidesFirst')),
-    pinnable.length > 0 && h('p', { class: 'help' }, t('pickSidesFirstHelp')),
-    pinnable.length > 0 &&
-      h(
-        'div',
-        { class: 'chips' },
-        pinnable.map((side) => button(`📌 ${side.emoji} ${side.name}`, () => pinFromList(side), 'chip')),
-      ),
-    h(
-      'div',
-      { class: 'row sheet-foot' },
-      button(t('cancel'), () => {
-        ui.picking = false;
-        render();
-      }),
-    ),
-  );
+/** "¿Con qué?" closed without a choice: in pick mode, back on the row that opened it. */
+function closeSideSheet() {
+  const mainId = ui.sideSheet?.mode === 'pick' && ui.picking ? ui.sideSheet.mainId : null;
+  ui.sideSheet = null;
+  render();
+  if (mainId) document.querySelector(`#view .dish-list > .list-item[data-dish="${CSS.escape(mainId)}"] .list-row`)?.focus();
 }
 
 /** "¿Con qué?": the main's sides. On the card it only changes the suggestion; after a list pick it logs the meal. */
@@ -2626,10 +2653,7 @@ function overlaySide() {
     h(
       'div',
       { class: 'row sheet-foot' },
-      button(t('cancel'), () => {
-        ui.sideSheet = null;
-        render();
-      }),
+      button(t('cancel'), closeSideSheet),
     ),
   );
 }
@@ -2911,6 +2935,7 @@ function switchTab(tab) {
   }
   ui.tab = tab;
   ui.editing = null;
+  endPicking(); // another tab, or Comidas' own button: a list to edit again
   wheelView.close();
   if (tab === 'settings' || tab === 'friends') refreshGroupList(true);
   if (tab === 'today' || tab === 'dishes') refreshGroupList();
@@ -2958,7 +2983,7 @@ function render() {
   if (ui.recipe && !dishById(ui.recipe.mainId)) ui.recipe = null;
   // Ask how the cook is once a day, then (only the first time) for favourites:
   // on Hoy, when nothing else is open.
-  const quiet = !ui.afterMeal && !ui.sheet && !ui.picking && !ui.sideSheet && !ui.recipe && !ui.friends && !ui.cooked && !ui.wheel;
+  const quiet = !ui.afterMeal && !ui.sheet && !ui.sideSheet && !ui.recipe && !ui.friends && !ui.cooked && !ui.wheel;
   if (!ui.mood && !ui.favorites && moodToday(state, Date.now()) === null && !ui.readOnly && ui.tab === 'today' && quiet) {
     ui.mood = true;
   }
@@ -2985,13 +3010,11 @@ function render() {
           ? overlayMissing()
           : ui.sideSheet
             ? overlaySide()
-            : ui.friends // above the list, which it may have been opened from
+            : ui.friends
               ? overlayFriends()
-              : ui.picking
-                ? overlayPicker()
-                : ui.recipe
-                  ? overlayRecipe()
-                  : null;
+              : ui.recipe
+                ? overlayRecipe()
+                : null;
   $('overlay').replaceChildren(...(overlay ? [overlay] : []));
   document.body.classList.toggle('has-overlay', Boolean(overlay));
 }
@@ -3094,15 +3117,23 @@ document.addEventListener('keydown', (e) => {
     closeFriends();
     return;
   }
-  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.picking || ui.sideSheet || ui.recipe)) {
+  if (e.key === 'Escape' && ui.sideSheet && !ui.afterMeal && !ui.favorites && !ui.sheet) {
+    closeSideSheet();
+    return;
+  }
+  if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.sideSheet || ui.recipe)) {
     ui.sheet = null;
-    ui.picking = false;
     ui.sideSheet = null;
     ui.recipe = null;
     render();
     return;
   }
-  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.picking || ui.sideSheet || ui.favorites || ui.mood || ui.recipe || ui.friends || ui.afterMeal) return;
+  // Comidas in pick mode (#48): Escape leaves it, when no sheet is over it.
+  if (e.key === 'Escape' && ui.picking && ui.tab === 'dishes' && !ui.editing && !$('overlay').hasChildNodes()) {
+    closePicker();
+    return;
+  }
+  if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.sideSheet || ui.favorites || ui.mood || ui.recipe || ui.friends || ui.afterMeal) return;
   if (e.target.closest?.('input, textarea, select')) return;
   if (e.key === 'ArrowRight') swipeRight();
   else if (e.key === 'ArrowLeft') swipeLeft();

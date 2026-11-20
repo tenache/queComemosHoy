@@ -108,6 +108,10 @@ const STRINGS = {
     // Dishes
     dishesTitle: 'Comidas',
     addDish: 'Agregar comida',
+    pickHere: 'Elegir',
+    pickSearch: 'Buscar qué cocinar…',
+    pinBadge: 'Fijar',
+    pickReplaceCooked: 'Hoy ya anotaste {cooked}. Si seguís, esa anotación se borra. ¿Seguir?',
     dishSearch: 'Buscar una comida…',
     dishSearchClear: 'Borrar la búsqueda',
     dishNoMatch: 'Ninguna comida con ese nombre.',

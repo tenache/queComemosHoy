@@ -311,6 +311,11 @@ button.chip[aria-pressed='true'] {
   padding-right: 48px;
 }
 
+/* No ✕ while it's empty: the placeholder gets that room (Comidas' search is narrower in pick mode, #48). */
+.search-row:has(.search-clear[hidden]) input {
+  padding-right: 14px;
+}
+
 /* No browser ✕: ours is the same everywhere. */
 .search-row input::-webkit-search-cancel-button {
   display: none;
@@ -1325,22 +1330,6 @@ input[type='number'] {
   color: var(--muted);
 }
 
-/* "Elegir de la lista": a friend's 💞 (#28) sits over the end of its row, so every row keeps the same width. */
-.pick-item {
-  position: relative;
-}
-
-.pick-item .list-row.marked {
-  padding-right: 52px;
-}
-
-.pick-mark {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  transform: translateY(-50%);
-}
-
 /*
  * Comidas (#46): the 💞 is a badge on the emoji's corner, so the name keeps its width on small phones
  * (the 📝 and ⭐ already take room) and a row doesn't grow when a 💞 comes or goes. Its button is
@@ -1384,6 +1373,19 @@ input[type='number'] {
 
 .dish-bar {
   margin-top: 6px;
+  display: flex; /* pick mode (#48): Cancelar next to the search */
+  gap: 8px;
+  align-items: center;
+}
+
+.dish-bar .search-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.pick-cancel,
+.row > .pick-enter {
+  flex: none; /* "＋ Agregar comida" gets the rest, on one line even at 320px */
 }
 
 /* A row's button or a chip reached with Tab stops below the sticky search, not behind it: on what takes the
@@ -1395,7 +1397,8 @@ input[type='number'] {
 }
 
 .dish-list > .list-item[hidden],
-.dish-sides-heading[hidden] {
+.dish-sides-heading[hidden],
+.dish-sides-help[hidden] {
   display: none;
 }
 
