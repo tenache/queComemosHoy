@@ -842,7 +842,7 @@ function viewDishes() {
     ui.dishSearch = '';
     search.value = '';
     filterDishes();
-    search.focus();
+    search.focus({ preventScroll: true });
   }, 'search-clear ghost', { 'aria-label': t('dishSearchClear') });
   return [
     h('header', { class: 'top' }, h('h1', null, t('dishesTitle'))),
@@ -851,7 +851,7 @@ function viewDishes() {
     h('ul', { class: 'list dish-list' }, mainCandidates(state.dishes).map(row)),
     sides.length > 0 && h('h2', { class: 'list-heading dish-sides-heading' }, t('sidesSection')),
     sides.length > 0 && h('ul', { class: 'list dish-list dish-sides' }, sides.map(row)),
-    h('p', { class: 'muted dish-none', role: 'status', hidden: true }, t('dishNoMatch')),
+    h('p', { class: 'muted dish-none', role: 'status' }), // always there, so a screen reader hears its text come
   ];
 }
 
@@ -866,7 +866,7 @@ function filterDishes() {
   const heading = document.querySelector('#view .dish-sides-heading');
   if (heading) heading.hidden = !document.querySelector('#view .dish-sides > .list-item:not([hidden])');
   const none = document.querySelector('#view .dish-none');
-  if (none) none.hidden = shown > 0 || wordsKey(ui.dishSearch) === '';
+  if (none) none.textContent = shown > 0 || wordsKey(ui.dishSearch) === '' ? '' : t('dishNoMatch');
   const clear = document.querySelector('#view .dish-search .search-clear');
   if (clear) clear.hidden = ui.dishSearch === '';
 }

@@ -1344,7 +1344,7 @@ input[type='number'] {
 /*
  * Comidas (#46): the 💞 is a badge on the emoji's corner, so the name keeps its width on small phones
  * (the 📝 and ⭐ already take room) and a row doesn't grow when a 💞 comes or goes. Its button is
- * 44px, centred on the badge.
+ * 36px, centred on the badge: big enough to tap, and the emoji's centre and the name still open the dish.
  */
 .dish-row {
   position: relative;
@@ -1355,10 +1355,10 @@ input[type='number'] {
 
 .dish-mark {
   position: absolute;
-  top: calc(50% + 14px);
-  left: 33px; /* the badge's centre on the emoji's corner: border 1 + padding 8 + emoji 48 − 2, minus half of 44 */
-  width: 44px;
-  height: 44px;
+  top: calc(50% + 19px);
+  left: 34px; /* the badge's centre near the emoji's corner: border 1 + padding 8 + emoji 48 − 5, minus half of 36 */
+  width: 36px;
+  height: 36px;
   transform: translateY(-50%);
   display: grid;
   place-items: center;
@@ -1370,12 +1370,12 @@ input[type='number'] {
 .dish-mark span {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: var(--surface);
+  background: var(--chip); /* lighter than the row in dark mode, so the badge shows */
   box-shadow: 0 0 0 1px var(--line);
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .dish-list .list-name {
@@ -1386,15 +1386,20 @@ input[type='number'] {
   margin-top: 6px;
 }
 
-/* A row reached with Tab stops below the sticky search, not behind it. */
-html:has(.view-dishes .dish-bar, .view-pantry .pantry-bar) {
-  scroll-padding-top: 70px;
+/* A row or chip reached with Tab stops below the sticky search, not behind it. (Not scroll-padding on
+   the page: the stuck search would then sit inside it, and focusing it after ✕ scrolled the page up.) */
+.dish-list > .list-item,
+.pantry-chips .chip {
+  scroll-margin-top: 70px;
 }
 
 .dish-list > .list-item[hidden],
-.dish-sides-heading[hidden],
-.dish-none[hidden] {
+.dish-sides-heading[hidden] {
   display: none;
+}
+
+.dish-none:empty {
+  margin: 0;
 }
 
 .list-heading {
