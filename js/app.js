@@ -136,7 +136,7 @@ const ui = {
   recipe: null, // {mainId, sideId} while the recipe sheet is open
   cooked: null, // {dishId, event, undo, shareId, sharedWith: [codes]} while the "¡A cocinar!" panel shows
   sheet: null, // {dishId, sideId, selected:Set} while the 🛒 sheet is open
-  picking: null, // Comidas in pick mode (#48): the tab it was entered from, 'today' or 'dishes'
+  picking: null, // Comidas in pick mode (#48): {from: 'today' | 'dishes', search: Comidas' search before, from Hoy}
   readOnly: false, // stored data is from a newer app version: never save over it
   afterMeal: null, // {event, dishId, selected:Set, verdict} while the question shows
   editing: null, // {id} (id null = new dish) while the dish form shows
@@ -372,6 +372,7 @@ function checkAfterMeal() {
 function cook(action, missing = [], dishId = ui.currentId, sideId = dishId === ui.currentId ? ui.sideId : null) {
   const dish = dishById(dishId);
   if (!dish) return;
+  if (ui.cooked) dropCooked(); // picked in Comidas instead: the person said yes to replacing it (confirmReplaceCooked)
   const undo = planUndo(state, dish.id, missing, sideId);
   const event = logCardAction(state, dish.id, action, missing, Date.now(), sideId);
   // One pick, with one id, to every group sharing (#33), so "Deshacer" takes it back from all of them.
@@ -381,13 +382,13 @@ function cook(action, missing = [], dishId = ui.currentId, sideId = dishId === u
   ui.cooked = { dishId: dish.id, event, undo, shareId, sharedWith: sharedWith.map((g) => g.code) };
   ui.sheet = null;
   ui.sideSheet = null;
-  const fromList = ui.tab !== 'today'; // picked in Comidas (#48): "¡A cocinar!" is on Hoy
-  ui.picking = null;
-  ui.tab = 'today';
   ui.pinnedSide = null; // the pin was for tonight's meal
   commit();
-  if (fromList) window.scrollTo(0, 0);
   flushGroup();
+  if (ui.picking) {
+    switchTab('today'); // picked in Comidas (#48): "¡A cocinar!" is on Hoy
+    focusToday();
+  }
 }
 
 /**
@@ -437,12 +438,17 @@ function reject(action, missing = []) {
 }
 
 function undoCook() {
+  dropCooked(); // back to the card that was showing
+  commit();
+  flushGroup();
+}
+
+/** Takes back the meal "¡A cocinar!" shows: its log, and its pick in the groups. */
+function dropCooked() {
   const { event, undo, shareId, sharedWith } = ui.cooked;
   undoCardAction(state, event, undo);
   for (const group of state.settings.groups) if (shareId && sharedWith.includes(group.code)) queueUnpick(group, shareId);
-  ui.cooked = null; // back to the card that was showing
-  commit();
-  flushGroup();
+  ui.cooked = null;
 }
 
 function openMissingSheet() {
@@ -619,7 +625,7 @@ function viewToday() {
         h('h2', null, t('noDishesTitle')),
         h('p', null, t('noDishesText')),
         button(t('goToDishes'), () => switchTab('dishes'), 'primary'),
-        state.dishes.length > 0 && button(`📖 ${t('pickFromList')}`, openPicker),
+        state.dishes.length > 0 && button(`📖 ${t('pickFromList')}`, openPicker, 'pick-open'),
       ),
       wheelButton('wide'),
     ];
@@ -707,7 +713,7 @@ function viewToday() {
       h('button', { type: 'button', class: 'action cart', onclick: openMissingSheet }, h('span', { 'aria-hidden': 'true' }, '🛒'), t('actionMissing')),
       h('button', { type: 'button', class: 'action yes', onclick: swipeRight }, h('span', { 'aria-hidden': 'true' }, '👉'), t('actionCook')),
     ),
-    h('div', { class: 'row more' }, button(`📖 ${t('pickFromList')}`, openPicker), wheelButton()),
+    h('div', { class: 'row more' }, button(`📖 ${t('pickFromList')}`, openPicker, 'pick-open'), wheelButton()),
     h('p', { class: 'hint' }, t('swipeHint')),
   ];
 }
@@ -779,6 +785,7 @@ function dishRow(dish, friends, picking) {
         {
           type: 'button',
           class: 'list-row',
+          'aria-describedby': picking ? (dish.role === 'side' ? 'dish-sides-help' : 'pick-help') : null,
           onclick: () => (!picking ? openDishForm(dish.id) : dish.role === 'side' ? pinFromList(dish) : pickFromList(dish)),
         },
         h('span', { class: 'list-emoji', style: `background:${gradientFor(dish)}`, 'aria-hidden': 'true' }, dish.emoji),
@@ -793,6 +800,7 @@ function dishRow(dish, friends, picking) {
           ),
         ),
         dish.neverShow && h('span', { class: 'badge' }, t('hidden')),
+        picking && dish.role === 'side' && h('span', { class: 'badge' }, `📌 ${t('pinBadge')}`), // a tap pins it, not logs it
       ),
       picked &&
         h(
@@ -833,8 +841,8 @@ function viewDishes() {
     id: 'dish-search',
     type: 'search',
     value: ui.dishSearch,
-    placeholder: t('dishSearch'),
-    'aria-label': t('dishSearch'),
+    placeholder: picking ? t('pickSearch') : t('dishSearch'), // the mode, where the eye is once scrolled down
+    'aria-label': picking ? t('pickSearch') : t('dishSearch'),
     autocomplete: 'off',
     autocapitalize: 'none',
     enterKeyHint: 'search',
@@ -855,12 +863,12 @@ function viewDishes() {
   return [
     h('header', { class: 'top' }, h('h1', { id: 'dish-title', tabIndex: -1 }, picking ? t('pickTitle') : t('dishesTitle'))),
     picking
-      ? h('p', { class: 'help' }, t('pickHelp'))
+      ? h('p', { class: 'help', id: 'pick-help' }, t('pickHelp'))
       : h(
           'div',
           { class: 'row' },
           button(`＋ ${t('addDish')}`, () => openDishForm(null), 'primary'),
-          button(`🍽️ ${t('pickHere')}`, openPicker, 'pick-enter'),
+          mainCandidates(state.dishes).length > 0 && button(`🍽️ ${t('pickHere')}`, openPicker, 'pick-enter'),
         ),
     h(
       'div',
@@ -870,7 +878,7 @@ function viewDishes() {
     ),
     h('ul', { class: 'list dish-list' }, mainCandidates(state.dishes).map(row)),
     sides.length > 0 && h('h2', { class: 'list-heading dish-sides-heading' }, picking ? t('pickSidesFirst') : t('sidesSection')),
-    sides.length > 0 && picking && h('p', { class: 'help dish-sides-help' }, t('pickSidesFirstHelp')),
+    sides.length > 0 && picking && h('p', { class: 'help dish-sides-help', id: 'dish-sides-help' }, t('pickSidesFirstHelp')),
     sides.length > 0 && h('ul', { class: 'list dish-list dish-sides' }, sides.map(row)),
     h('p', { class: 'muted dish-none', role: 'status' }), // always there, so a screen reader hears its text come
   ];
@@ -2514,26 +2522,48 @@ function overlayMissing() {
  */
 function openPicker() {
   const from = ui.tab;
+  const search = ui.dishSearch;
   if (from !== 'dishes') {
     ui.dishSearch = '';
     switchTab('dishes');
   }
-  ui.picking = from;
+  ui.picking = { from, search };
   render();
   $('dish-title')?.focus({ preventScroll: true });
 }
 
+/** Leaves pick mode. Entered from Hoy, Comidas gets back the search it had: the one typed to pick was for that. */
+function endPicking() {
+  if (ui.picking?.from === 'today') ui.dishSearch = ui.picking.search;
+  ui.picking = null;
+}
+
 /** Cancelar or Escape: back to where pick mode was entered from. */
 function closePicker() {
-  const from = ui.picking;
-  ui.picking = null;
-  if (from !== 'dishes') return switchTab('today');
+  const from = ui.picking.from;
+  endPicking();
+  if (from !== 'dishes') {
+    switchTab('today');
+    return document.querySelector('#view .pick-open')?.focus();
+  }
   render();
   document.querySelector('#view .pick-enter')?.focus({ preventScroll: true });
 }
 
+/**
+ * Picking in Comidas while "¡A cocinar!" shows a meal already logged (#48): asks before
+ * the new pick replaces it (cook() takes it back, Deshacer and all). False: stay.
+ */
+function confirmReplaceCooked() {
+  const cooked = ui.cooked && dishById(ui.cooked.dishId);
+  if (!cooked || window.confirm(t('pickReplaceCooked', { cooked: cooked.name }))) return true;
+  document.activeElement?.blur(); // a tapped row keeps the focus, and would hold back the list's redraws
+  return false;
+}
+
 /** A main picked from the list: straight to "¡A cocinar!", or first "¿Con qué?" if it takes a side. */
 function pickFromList(dish) {
+  if (!confirmReplaceCooked()) return;
   if (sidesOf(dish, state.dishes).length === 0) return cook(ACTIONS.PICK, [], dish.id, null);
   const suggested = pickSide(dish, scoringContext(), state.settings.variety);
   openSideSheet('pick', dish.id, suggested?.id ?? null);
@@ -2541,6 +2571,12 @@ function pickFromList(dish) {
 
 /** A side chosen first: pin it, and show a main that goes with it on Hoy. */
 function pinFromList(side) {
+  if (!confirmReplaceCooked()) return;
+  if (ui.cooked) {
+    dropCooked();
+    commit();
+    flushGroup();
+  }
   ui.pinnedSide = side.id;
   const current = dishById(ui.currentId);
   if (current && sidesOf(current, state.dishes).some((d) => d.id === side.id)) {
@@ -2549,8 +2585,16 @@ function pinFromList(side) {
   } else {
     ui.currentId = null;
   }
-  ui.cooked = null;
   switchTab('today');
+  focusToday();
+}
+
+/** "¿Con qué?" closed without a choice: in pick mode, back on the row that opened it. */
+function closeSideSheet() {
+  const mainId = ui.sideSheet?.mode === 'pick' && ui.picking ? ui.sideSheet.mainId : null;
+  ui.sideSheet = null;
+  render();
+  if (mainId) document.querySelector(`#view .dish-list > .list-item[data-dish="${CSS.escape(mainId)}"] .list-row`)?.focus();
 }
 
 /** "¿Con qué?": the main's sides. On the card it only changes the suggestion; after a list pick it logs the meal. */
@@ -2593,10 +2637,7 @@ function overlaySide() {
     h(
       'div',
       { class: 'row sheet-foot' },
-      button(t('cancel'), () => {
-        ui.sideSheet = null;
-        render();
-      }),
+      button(t('cancel'), closeSideSheet),
     ),
   );
 }
@@ -2878,7 +2919,7 @@ function switchTab(tab) {
   }
   ui.tab = tab;
   ui.editing = null;
-  ui.picking = null; // another tab, or Comidas' own button: a list to edit again
+  endPicking(); // another tab, or Comidas' own button: a list to edit again
   wheelView.close();
   if (tab === 'settings' || tab === 'friends') refreshGroupList(true);
   if (tab === 'today' || tab === 'dishes') refreshGroupList();
@@ -2953,7 +2994,7 @@ function render() {
           ? overlayMissing()
           : ui.sideSheet
             ? overlaySide()
-            : ui.friends // above the recipe, which it may have been opened from
+            : ui.friends
               ? overlayFriends()
               : ui.recipe
                 ? overlayRecipe()
@@ -3058,6 +3099,10 @@ document.addEventListener('keydown', (e) => {
   // Who picked closes alone (back to the list it may have come from), when it's the sheet showing (see render()).
   if (e.key === 'Escape' && ui.friends && !ui.afterMeal && !ui.mood && !ui.favorites && !ui.sheet && !ui.sideSheet) {
     closeFriends();
+    return;
+  }
+  if (e.key === 'Escape' && ui.sideSheet && !ui.afterMeal && !ui.favorites && !ui.sheet) {
+    closeSideSheet();
     return;
   }
   if (e.key === 'Escape' && !ui.afterMeal && !ui.favorites && (ui.sheet || ui.sideSheet || ui.recipe)) {
