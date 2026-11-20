@@ -1386,9 +1386,10 @@ input[type='number'] {
   margin-top: 6px;
 }
 
-/* A row or chip reached with Tab stops below the sticky search, not behind it. (Not scroll-padding on
-   the page: the stuck search would then sit inside it, and focusing it after ✕ scrolled the page up.) */
-.dish-list > .list-item,
+/* A row's button or a chip reached with Tab stops below the sticky search, not behind it: on what takes the
+   focus. (Not scroll-padding on the page: the stuck search would sit inside it, and focusing it after ✕
+   scrolled the page up.) */
+.dish-list > .list-item button,
 .pantry-chips .chip {
   scroll-margin-top: 70px;
 }
