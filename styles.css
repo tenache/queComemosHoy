@@ -1339,6 +1339,28 @@ input[type='number'] {
   transform: translateY(-50%);
 }
 
+/* Comidas (#46): the same 💞, over the end of the row (not the 📝 and ⭐ after it). */
+.dish-row {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.dish-row .list-row.marked {
+  padding-right: 52px;
+}
+
+.dish-search {
+  margin: 12px 0 4px;
+}
+
+.dish-list > .list-item[hidden],
+.dish-sides-heading[hidden],
+.dish-none[hidden] {
+  display: none;
+}
+
 .list-heading {
   font-size: 1.1rem;
   margin-top: 8px;

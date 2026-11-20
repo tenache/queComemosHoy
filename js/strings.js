@@ -108,6 +108,9 @@ const STRINGS = {
     // Dishes
     dishesTitle: 'Comidas',
     addDish: 'Agregar comida',
+    dishSearch: 'Buscar una comida…',
+    dishSearchClear: 'Borrar la búsqueda',
+    dishNoMatch: 'Ninguna comida con ese nombre.',
     editDish: 'Editar comida',
     newDish: 'Nueva comida',
     hidden: 'Oculta',
