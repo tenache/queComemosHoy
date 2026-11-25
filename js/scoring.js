@@ -353,6 +353,22 @@ export function probabilities(dishes, ctx, variety = 'medium', exclude = []) {
   }));
 }
 
+/**
+ * The ideas have run out (#53): every main the card could draw is banned
+ * today. `dishes` are the card's candidates, `banned` a Set of ids. With
+ * something to cook (#52's pantry mode) and some visible main complete, only
+ * the complete ones count: incomplete mains don't come after them. False with
+ * no visible main at all (that's the "no dishes" screen).
+ */
+export function outOfIdeas(dishes, ctx, banned) {
+  const visible = dishes.filter((d) => !d.neverShow);
+  if (visible.length === 0) return false;
+  const isMissing = ctx.isMissing ?? (() => false);
+  const pantryEmpty = ctx.pantryEmpty ?? nothingAvailable(ctx.dishes ?? dishes, isMissing);
+  const complete = pantryEmpty ? [] : visible.filter((d) => !(d.ingredients ?? []).some((i) => isMissing(i)));
+  return (complete.length > 0 ? complete : visible).every((d) => banned.has(d.id));
+}
+
 // ---- Mains and sides ------------------------------------------------------
 
 /**
@@ -392,6 +408,15 @@ export function pickDish(dishes, ctx, variety = 'medium', { rng = Math.random, e
     if (r < 0) return row.dish;
   }
   return table[table.length - 1].dish; // rounding left r a hair above 0
+}
+
+/**
+ * Draws the card's main. Not the ones in `exclude` (the card on screen),
+ * unless nothing else is left; never one in `banned` (#53: a "no" lasts all day).
+ */
+export function pickCard(candidates, ctx, variety = 'medium', { rng = Math.random, exclude = [], banned = new Set() } = {}) {
+  const never = [...banned];
+  return pickDish(candidates, ctx, variety, { rng, exclude: [...exclude, ...never] }) ?? pickDish(candidates, ctx, variety, { rng, exclude: never });
 }
 
 /** Cooking time of a main with its side: they cook at the same time, so the longer of the two. */

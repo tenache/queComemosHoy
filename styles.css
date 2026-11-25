@@ -604,6 +604,11 @@ button.chip[aria-pressed='true'] {
   gap: 10px;
 }
 
+/* The delivery card (#53): 👈 and 👉 only. */
+.actions.two {
+  grid-template-columns: 1fr 1fr;
+}
+
 .action {
   min-height: 64px;
   padding: 8px 4px;
