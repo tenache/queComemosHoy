@@ -1,7 +1,7 @@
 // The app's state as one versioned JSON object, plus pure helpers that change
 // it. No DOM and no storage here, so `node --test` can cover it.
 
-import { CHANGED_IN_V6, NEW_IN_V3, NEW_IN_V6, NEW_IN_V8, SIDES_IN_V8, SPLIT_IN_V3, STARTER_DISHES, starterEffort } from './dishes.js';
+import { CHANGED_IN_V6, NEW_IN_V3, NEW_IN_V6, NEW_IN_V8, SIDES_IN_V8, SPLIT_IN_V3, STARTER_DISHES, starterEffort, starterKeys } from './dishes.js';
 import { ACTIONS, EFFORT, FAVORITES_MAX, LIKING, MOOD_IDS, YUM, applyLiking, applyYum, clamp, isEaten, normalizeName } from './scoring.js';
 import { FOODS } from './nutrition.js';
 import { cleanGroup, cleanGroups } from './group.js';
@@ -15,7 +15,8 @@ import { DEFAULT_CUISINES, NEW_CUISINES_IN_V6, NEW_CUISINES_IN_V8, addCuisine, c
 // 6: no new fields: the starter menu and the wheel change (#29, #30).
 // 7: several friends' groups (#33): `settings.group` becomes `settings.groups`.
 // 8: no new fields: the Mediterranean dishes, and "Mediterránea" on the wheel (#36).
-export const SCHEMA_VERSION = 8;
+// 9: `keyIngredients` on a dish (#52), the 🔑 ones.
+export const SCHEMA_VERSION = 9;
 export const PORTIONS = { min: 1, max: 12, default: 2 };
 const MAX_RECIPE_ITEMS = 40;
 const MAX_RECIPE_STEPS = 30;
@@ -25,7 +26,7 @@ export const PANTRY_MODES = ['lazy', 'manual'];
 export const VARIETIES = ['low', 'medium', 'high'];
 export const MAX_MAINS = 3;
 
-const copyStarter = (d) => ({ ...d, ingredients: [...d.ingredients], mains: [...d.mains], sides: [...d.sides] });
+const copyStarter = (d) => ({ ...d, ingredients: [...d.ingredients], keyIngredients: [...d.keyIngredients], mains: [...d.mains], sides: [...d.sides] });
 
 export function defaultState() {
   return {
@@ -66,6 +67,8 @@ export function cleanDish(raw) {
     name: String(raw.name ?? '').trim(),
     emoji: String(raw.emoji ?? '').trim() || '🍽️',
     ingredients,
+    // The 🔑 ones (#52): always some of `ingredients`, so a renamed ingredient loses its key.
+    keyIngredients: cleanNames(raw.keyIngredients).filter((n) => ingredients.includes(n)),
     mains: cleanNames(raw.mains).slice(0, MAX_MAINS),
     cookMinutes: Math.round(cleanNumber(raw.cookMinutes, 0, 24 * 60, 30)),
     effort: cleanNumber(raw.effort, EFFORT.min, EFFORT.max, EFFORT.default),
@@ -168,6 +171,17 @@ function migrate(raw) {
     giveSides(blob, SIDES_IN_V8);
     blob.cuisines = withCuisines(blob.cuisines, NEW_CUISINES_IN_V8);
     blob.schemaVersion = 8;
+  }
+  if (blob.schemaVersion === 8) {
+    // v9: key ingredients (#52). A starter dish still under its starter name gets its 🔑,
+    // those still in its ingredients; an edited dish is the user's, as in giveSides.
+    blob.dishes = blob.dishes.map((raw) => {
+      const starter = raw && typeof raw === 'object' ? STARTERS.get(String(raw.id)) : undefined;
+      if (!starter || String(raw.name ?? '').trim() !== starter.name) return raw;
+      const have = cleanNames(raw.ingredients);
+      return { ...raw, keyIngredients: starterKeys(starter.id).filter((k) => have.includes(k)) };
+    });
+    blob.schemaVersion = 9;
   }
   return blob;
 }

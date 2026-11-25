@@ -1,7 +1,7 @@
 // UI. All text comes from strings.js, all scoring from scoring.js, all state
 // changes go through state.js and are saved by commit().
 
-import { ACTIONS, FAVORITES_MAX, MOOD_IDS, afterMealDue, mainCandidates, mealMinutes, pickDish, pickSide, probabilities, sidesOf } from './scoring.js';
+import { ACTIONS, FAVORITES_MAX, MOOD_IDS, afterMealDue, mainCandidates, mealMinutes, nothingAvailable, pickDish, pickSide, probabilities, sidesOf } from './scoring.js';
 import { PARAMS, PARAM_GROUPS, applyParams, cleanParams, defaultParam, paramSource, paramValue, paramsJson } from './params.js';
 import {
   MAX_MAINS,
@@ -295,11 +295,14 @@ function reportLoadProblem({ problem, raw }) {
 const dishById = (id) => state.dishes.find((d) => d.id === id);
 
 function scoringContext() {
+  const missing = (name) => isMissing(state, name);
   return {
     now: Date.now(),
     events: state.events,
     dishes: state.dishes,
-    isMissing: (name) => isMissing(state, name),
+    isMissing: missing,
+    // Once per context, over every dish, so mains and sides always use the same mode (#52).
+    pantryEmpty: nothingAvailable(state.dishes, missing),
     pinnedSideId: ui.pinnedSide,
     mood: moodToday(state, Date.now()),
     friends: friendCounts(currentGroupLists(), Date.now()),
@@ -963,6 +966,31 @@ function viewDishForm() {
   });
   const emoji = h('input', { id: 'f-emoji', type: 'text', value: dish.emoji, autocomplete: 'off', class: 'emoji-input' });
   const ingredients = h('input', { id: 'f-ingredients', type: 'text', value: dish.ingredients.join(', '), autocomplete: 'off', autocapitalize: 'none' });
+  // The 🔑 ingredients (#52): one chip per ingredient. Changing an ingredient's text drops its key
+  // on save (cleanDish keeps only keys among the ingredients), not while typing: "spato" on the way
+  // to "sal, pato" mustn't lose pato's 🔑.
+  const keys = new Set(dish.keyIngredients ?? []);
+  const keyChips = h('div', { class: 'chips', role: 'group', 'aria-labelledby': 'f-keys-label' });
+  const keyChip = (name) => {
+    const chip = h('button', {
+      type: 'button',
+      class: 'chip small',
+      onclick: () => {
+        if (keys.has(name)) keys.delete(name);
+        else keys.add(name);
+        paint();
+      },
+    });
+    const paint = () => {
+      chip.setAttribute('aria-pressed', String(keys.has(name)));
+      chip.textContent = keys.has(name) ? `🔑 ${name}` : name;
+    };
+    paint();
+    return chip;
+  };
+  const syncKeys = () => keyChips.replaceChildren(...splitList(ingredients.value).map(keyChip));
+  ingredients.addEventListener('input', syncKeys);
+  syncKeys();
   const mains = h('input', { id: 'f-mains', type: 'text', value: dish.mains.join(', '), autocomplete: 'off', autocapitalize: 'none' });
   const minutes = h('input', { id: 'f-minutes', type: 'number', min: '0', max: '1440', step: '5', inputMode: 'numeric', value: String(dish.cookMinutes) });
   const neverShow = h('input', { id: 'f-never', type: 'checkbox', checked: dish.neverShow });
@@ -1097,6 +1125,7 @@ function viewDishForm() {
       name: name.value,
       emoji: emoji.value,
       ingredients: splitList(ingredients.value),
+      keyIngredients: [...keys],
       mains: mainsList,
       cookMinutes: minutesValue,
       effort: original?.effort, // hidden: an edit keeps it, a new dish gets the default
@@ -1156,6 +1185,7 @@ function viewDishForm() {
       { class: 'form', onsubmit: save, noValidate: true },
       h('div', { class: 'field-row' }, field(emoji, t('fieldEmoji')), field(name, t('fieldName'))),
       field(ingredients, t('fieldIngredients'), t('fieldIngredientsHelp')),
+      h('div', { class: 'field' }, h('span', { class: 'field-label', id: 'f-keys-label' }, t('fieldKeyIngredients')), keyChips, h('p', { class: 'help' }, t('fieldKeyIngredientsHelp'))),
       field(mains, t('fieldMains'), t('fieldMainsHelp')),
       tagChips,
       h('div', { class: 'field' }, h('span', { class: 'field-label' }, t('fieldRole')), roleGroup, roleHelp),

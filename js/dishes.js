@@ -37,6 +37,45 @@ const STARTER_EFFORT = {
   hummus: 1, tabule: 3, cuscus: 1,
 };
 
+// Key ingredients (🔑, #52): the ones without which it isn't that dish (pollo
+// al curry without arroz is still pollo al curry). Missing one makes a dish
+// much less likely than missing another ingredient. A dish not listed has none,
+// and then every missing ingredient counts as secondary.
+// prettier-ignore
+const STARTER_KEYS = {
+  'fideos-manteca': ['fideos'], 'patitas-pollo': ['patitas de pollo'], 'bife-plancha': ['bife'], 'fideos-huevo': ['fideos'],
+  'milanesas-berenjena': ['berenjena'], 'pollo-curry': ['pollo'], 'sopa-pollo': ['pollo'], 'tarta-jamon-queso': ['jamón', 'queso'],
+  'pato-naranja': ['pato'], 'tortilla-papas': ['papa', 'huevo'], lentejas: ['lentejas'], 'milanesas-pure': ['carne'],
+  'ravioles-tuco': ['ravioles'], noquis: ['ñoquis'], 'arroz-atun': ['arroz', 'atún'], 'tarta-acelga': ['acelga'],
+  'empanadas-carne': ['tapas de empanada', 'carne picada'], pizza: ['harina', 'mozzarella'], 'polenta-tuco': ['polenta'],
+  'guiso-fideos': ['fideos', 'carne'], 'pollo-horno-papas': ['pollo'], 'ensalada-completa': ['lechuga'],
+  'revuelto-zapallitos': ['zapallito', 'huevo'], hamburguesas: ['carne picada'], 'fajitas-pollo': ['pollo', 'tortillas'],
+  'merluza-ensalada': ['merluza'], paella: ['arroz'], gazpacho: ['tomate'], 'garbanzos-espinaca': ['garbanzos', 'espinaca'],
+  tostado: ['pan', 'jamón', 'queso'], omelette: ['huevo'], 'wok-verduras': ['brócoli'], asado: ['asado'],
+  'cerdo-batatas': ['bondiola de cerdo'], 'zapallitos-rellenos': ['zapallito'], 'croquetas-arroz': ['arroz'],
+  salchichas: ['salchichas'], 'huevos-fritos': ['huevo'], 'pechuga-plancha': ['pechuga de pollo'],
+  'pulled-pork': ['bondiola de cerdo'],
+  // Mediterranean (v8, #36).
+  fideua: ['fideos de fideuá'], 'arroz-negro': ['arroz', 'tinta de calamar'], 'butifarra-judias': ['butifarra'],
+  salmorejo: ['tomate', 'pan'], 'gambas-ajillo': ['gambas'], 'calamares-romana': ['calamar'], sardinas: ['sardinas'],
+  suquet: ['merluza'], 'pasta-pesto': ['fideos', 'albahaca'], 'pasta-puttanesca': ['fideos'],
+  'pasta-aglio-olio': ['fideos', 'ajo'], 'espaguetis-almejas': ['fideos', 'almejas'], 'pasta-norma': ['fideos', 'berenjena'],
+  'berenjenas-parmesana': ['berenjena'], musaka: ['berenjena', 'carne picada'], souvlaki: ['cerdo', 'pan de pita'],
+  'tarta-espinaca-feta': ['masa filo', 'espinaca'], 'tomates-rellenos': ['tomate'], 'albondigas-griegas': ['carne picada'],
+  'cordero-horno': ['cordero'], 'sopa-lentejas-rojas': ['lentejas rojas'], falafel: ['garbanzos secos'],
+  'lentejas-arroz': ['lentejas'], shakshuka: ['huevo'], 'cuscus-verduras': ['cuscús'], 'tajin-pollo': ['pollo'],
+  ratatouille: ['berenjena', 'zapallito'], 'ensalada-nizarda': ['atún'], 'dorada-horno': ['dorada o lubina'],
+  'mejillones-marinera': ['mejillones'], 'pollo-ajillo': ['pollo'], 'shawarma-pollo': ['pollo'],
+  canelones: ['placas de canelones'], 'arroz-horno': ['arroz'], 'tajin-kefta': ['carne picada', 'huevo'],
+  'gigantes-horno': ['porotos pallares'],
+  // Sides.
+  pure: ['papa'], 'pure-calabaza': ['calabaza'], 'ensalada-mixta': ['lechuga'], 'ensalada-tomate': ['tomate'],
+  'papas-fritas': ['papa'], 'papas-horno': ['papa'], 'batatas-horno': ['batata'], 'arroz-blanco': ['arroz'],
+  'pan-tomate': ['pan', 'tomate'], escalivada: ['berenjena', 'morrón'], 'espinacas-catalana': ['espinaca'],
+  'ensalada-griega': ['tomate', 'pepino'], 'ensalada-caprese': ['tomate', 'mozzarella'], hummus: ['garbanzos'],
+  tabule: ['bulgur'], cuscus: ['cuscús'],
+};
+
 const dish = (role, id, name, emoji, cookMinutes, health, yum, mains, ingredients, sides = []) => ({
   id,
   name,
@@ -44,6 +83,7 @@ const dish = (role, id, name, emoji, cookMinutes, health, yum, mains, ingredient
   role,
   sides,
   ingredients,
+  keyIngredients: STARTER_KEYS[id] ?? [],
   mains,
   cookMinutes,
   effort: STARTER_EFFORT[id],
@@ -185,6 +225,9 @@ export const SPLIT_IN_V3 = {
 
 /** The starter effort of a dish id, or undefined for the user's own dishes. */
 export const starterEffort = (id) => STARTER_EFFORT[id];
+
+/** A starter dish's key ingredients (#52), [] for none or an unknown id. */
+export const starterKeys = (id) => [...(STARTER_KEYS[id] ?? [])];
 
 /** Starter dishes that v3 adds to existing data. */
 export const NEW_IN_V3 = [

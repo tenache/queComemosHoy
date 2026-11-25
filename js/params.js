@@ -8,10 +8,10 @@
 // reads at call time. Every value is checked against PARAMS and clamped, so a
 // typo or a broken params.json can't break the app. Pure: no DOM, no storage.
 
-import { AFTER_MEAL, COOK_LEVEL, FLOOR, FRIENDS, LIKING, MOOD, SIDE_EFFORT, TEMPERATURE, WEIGHTS, YUM } from './scoring.js';
+import { AFTER_MEAL, COOK_LEVEL, FLOOR, FRIENDS, LIKING, MISSING, MOOD, SIDE_EFFORT, TEMPERATURE, WEIGHTS, YUM } from './scoring.js';
 import { WHEEL } from './wheel.js';
 
-const TARGETS = { WEIGHTS, WHEEL, TEMPERATURE, FLOOR, LIKING, YUM, COOK_LEVEL, SIDE_EFFORT, AFTER_MEAL, MOOD, FRIENDS };
+const TARGETS = { WEIGHTS, WHEEL, TEMPERATURE, FLOOR, LIKING, YUM, COOK_LEVEL, SIDE_EFFORT, AFTER_MEAL, MOOD, FRIENDS, MISSING };
 
 // One row per number: [key, group, min, max, step, percent?]. `percent` shows
 // a 0–1 share as 0–100 in the panel. Labels and help are in strings.js under
@@ -33,6 +33,8 @@ const ROWS = [
   ['WEIGHTS.effort', 'score', 0, 5, 0.05],
   ['WEIGHTS.cookTime', 'score', 0, 5, 0.05],
   ['WEIGHTS.favorite', 'score', 0, 5, 0.05],
+  ['MISSING.secondaryOdds', 'score', 1, 1000, 0.5],
+  ['MISSING.keyOdds', 'score', 1, 1000, 0.5],
   ['WEIGHTS.missingIngredient', 'score', 0, 5, 0.05],
   ['SIDE_EFFORT.quantile', 'score', 0, 1, 0.05],
   ['COOK_LEVEL.minMinutes', 'score', 5, 120, 5],

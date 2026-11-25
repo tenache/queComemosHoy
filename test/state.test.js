@@ -222,6 +222,7 @@ test('normalizeState: repairs bad values and rejects what it cannot use', () => 
     name: 'Sopa',
     emoji: '🍽️',
     ingredients: [],
+    keyIngredients: [],
     mains: ['a', 'b', 'c'],
     cookMinutes: 0,
     effort: 3,

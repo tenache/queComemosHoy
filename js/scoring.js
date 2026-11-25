@@ -6,7 +6,7 @@ export const WEIGHTS = {
   yum: 1.5, // × (yum - 1) / 4
   effort: 1.25, // × (effort - 1) / 4: hands-on work in the kitchen, hidden from the user
   cookTime: 1.5, // × (cookLevel(cookMinutes) - 1) / 4
-  missingIngredient: 0.6, // per ingredient missing right now
+  missingIngredient: 0.6, // per ingredient missing right now, only when nothing is available (see MISSING)
   notTonight: 2.0, // per left swipe, × exp(-days / notTonightFadeDays)
   notTonightFadeDays: 1.5,
   repeat: 3.0, // per time this dish was eaten, × exp(-days / repeatFadeDays)
@@ -47,8 +47,18 @@ export const EFFORT = { min: 1, max: 5, default: 3 };
 // always pick the easiest side, so not the lowest (Thomas, 2026-11-13).
 export const SIDE_EFFORT = { quantile: 0.25 };
 
+// What you have comes first (#52). Two imaginary dishes: the ideally good meal
+// (IGM, the best score a dish can get) and the ideally bad one (IBM, the worst).
+// An IBM with nothing missing is `secondaryOdds` times as likely as an IGM
+// missing one ingredient, `keyOdds` times if it is a key one (🔑), at any
+// variety and any number of dishes. Odds multiply: 2 missing → 4:1. When no
+// ingredient of any dish is available, the pantry says nothing useful and
+// WEIGHTS.missingIngredient applies instead, as before #52.
+export const MISSING = { secondaryOdds: 2, keyOdds: 10 };
+
 // Every dish that can appear keeps a minimum chance: this fraction of a fair
 // share (1/N). A dish swiped left in the last `swipeWindowDays` gets no minimum.
+// With something to cook, only the dishes missing the least share it (#52).
 export const FLOOR = { fairShareFraction: 1 / 8, swipeWindowDays: 4 };
 
 // Softmax temperature per "variety" setting.
@@ -174,7 +184,41 @@ export function mealEffort(main, dishes, pinnedSideId = null) {
 }
 
 /**
- * Score of one dish.
+ * True when no ingredient of any dish that can be shown is available (#52):
+ * the pantry was never touched, "No tengo nada", or everything is on the list.
+ * Then missing ingredients cost WEIGHTS.missingIngredient each, as before #52.
+ */
+export function nothingAvailable(dishes, isMissing) {
+  return !dishes.some((d) => !d.neverShow && (d.ingredients ?? []).some((i) => !isMissing(i)));
+}
+
+/**
+ * The score between the ideally good meal and the ideally bad one with today's
+ * weights (#52): every term at its best minus at its worst, the friends boost
+ * included. 12 by default. A dish no friend picked (and every side) can't get
+ * that close to the worst one, so for it the odds are wider than MISSING's
+ * (about 15:1 instead of 2:1 at T = 1): stricter, never looser.
+ */
+export function idealGap(mood = null) {
+  const W = moodWeights(mood);
+  const friends = FRIENDS.first > 0 && FRIENDS.max > 0 ? Math.max(FRIENDS.first, FRIENDS.max) : 0;
+  return W.health + W.yum + W.effort + W.cookTime + (LIKING.max - LIKING.min) + W.favorite + friends;
+}
+
+/** ln of the odds a dish's missing ingredients cost it (#52): ln keyOdds per 🔑 one, ln secondaryOdds per other one. */
+export function missingLogOdds(dish, isMissing) {
+  const keys = new Set(dish.keyIngredients ?? []);
+  let total = 0;
+  for (const i of dish.ingredients ?? []) {
+    if (isMissing(i)) total += Math.log(keys.has(normalizeName(i)) ? MISSING.keyOdds : MISSING.secondaryOdds);
+  }
+  return total;
+}
+
+/**
+ * Score of one dish, without #52's missing-ingredient penalty (probabilities()
+ * adds it: it needs the temperature). When nothing is available it subtracts
+ * WEIGHTS.missingIngredient per missing ingredient instead, as before.
  * ctx = {
  *   now:          ms timestamp,
  *   events:       [{dishId, action, time, missing[]}],
@@ -184,10 +228,13 @@ export function mealEffort(main, dishes, pinnedSideId = null) {
  *   asSide:       true when the dishes are being scored as sides: each counts alone, without sides of its own,
  *   mood:         today's answer to the mood question (MOOD_IDS), or null,
  *   friends:      Map dishId → how many friends picked it today or yesterday (#23), or null,
+ *   pantryEmpty:  nothingAvailable() over all dishes (#52); when left out, worked out from `dishes`
+ *                 (or from this dish alone if `dishes` is empty),
  * }
  */
 export function scoreDish(dish, ctx) {
   const { now, events = [], dishes = [], isMissing = () => false, pinnedSideId = null, asSide = false, mood = null, friends = null } = ctx;
+  const pantryEmpty = ctx.pantryEmpty ?? nothingAvailable(dishes.length > 0 ? dishes : [dish], isMissing);
   const W = moodWeights(mood);
   const effort = asSide ? effortOf(dish) : mealEffort(dish, dishes, pinnedSideId);
 
@@ -199,8 +246,7 @@ export function scoreDish(dish, ctx) {
     (W.effort * (effort - 1)) / 4 -
     (W.cookTime * (cookLevel(dish.cookMinutes) - 1)) / 4;
 
-  const missingCount = (dish.ingredients ?? []).filter((i) => isMissing(i)).length;
-  score -= W.missingIngredient * missingCount;
+  if (pantryEmpty) score -= W.missingIngredient * (dish.ingredients ?? []).filter((i) => isMissing(i)).length;
   // Friends pick mains (the card), so a side gets nothing from them.
   if (friends && !asSide) score += friendsBoost(friends.get(dish.id) ?? 0);
 
@@ -250,14 +296,30 @@ function recentlySwiped(events, now) {
 }
 
 /**
+ * The penalty for what a dish is missing (#52): the ideal gap G plus
+ * T · ln(odds), so that against a complete dish G worse the odds are exactly
+ * MISSING's, whatever the temperature. 0 when nothing is missing, and always
+ * 0 when nothing is available (scoreDish's own penalty applies then).
+ */
+function missingPenalty(dish, ctx, T, gap) {
+  if (ctx.pantryEmpty) return 0;
+  const isMissing = ctx.isMissing ?? (() => false);
+  if (!(dish.ingredients ?? []).some((i) => isMissing(i))) return 0;
+  return gap + T * missingLogOdds(dish, isMissing);
+}
+
+/**
  * Probabilities over the dishes that may be shown: a softmax of the scores,
- * mixed with an even share so no dish is banned in practice.
+ * mixed with an even share so no dish you can make is banned in practice.
  *
  *   p = (1 - ε) · softmax + ε · uniform(E),   ε = |E| · fraction / N
  *
- * N is the number of candidates and E the ones with no recent left swipe, so
- * every dish in E gets at least fraction / N (an eighth of a fair share).
- * Returns [{dish, score, p, floored}]. "Never show" dishes and ids in `exclude` are left out.
+ * The floor goes to the candidates with the smallest missing-ingredient
+ * penalty (#52; with something to cook, the complete ones; when nothing is
+ * available, all of them). N is how many those are and E the ones among them
+ * with no recent left swipe, so every dish in E gets at least fraction / N.
+ * Returns [{dish, score, p, floored}], `score` with the missing penalty.
+ * "Never show" dishes and ids in `exclude` are left out.
  */
 export function probabilities(dishes, ctx, variety = 'medium', exclude = []) {
   const T = temperature(variety, ctx.mood);
@@ -265,15 +327,23 @@ export function probabilities(dishes, ctx, variety = 'medium', exclude = []) {
   const candidates = dishes.filter((d) => !d.neverShow && !skip.has(d.id));
   if (candidates.length === 0) return [];
 
-  const fullCtx = { ...ctx, dishes: ctx.dishes ?? dishes };
-  const scores = candidates.map((d) => scoreDish(d, fullCtx));
+  const all = ctx.dishes ?? dishes;
+  const pantryEmpty = ctx.pantryEmpty ?? nothingAvailable(all, ctx.isMissing ?? (() => false));
+  const fullCtx = { ...ctx, dishes: all, pantryEmpty };
+  const gap = idealGap(ctx.mood);
+  const penalties = candidates.map((d) => missingPenalty(d, fullCtx, T, gap));
+  const scores = candidates.map((d, i) => scoreDish(d, fullCtx) - penalties[i]);
   const top = Math.max(...scores); // subtract the max so exp() can't overflow
   const weights = scores.map((s) => Math.exp((s - top) / T));
   const total = weights.reduce((a, b) => a + b, 0);
 
   const swiped = recentlySwiped(fullCtx.events ?? [], fullCtx.now);
-  const floor = FLOOR.fairShareFraction / candidates.length;
-  const floored = candidates.map((d) => !swiped.has(d.id));
+  const least = Math.min(...penalties);
+  // Equal penalties come from the same sums of the same logs, so they differ by rounding at most
+  // (~1e-14 at these sizes); 1e-9 is far below any real difference (ln 2 × T ≥ 0.07).
+  const inGroup = penalties.map((x) => x <= least + 1e-9);
+  const floor = FLOOR.fairShareFraction / inGroup.filter(Boolean).length;
+  const floored = candidates.map((d, i) => inGroup[i] && !swiped.has(d.id));
   const epsilon = floor * floored.filter(Boolean).length;
   return candidates.map((dish, i) => ({
     dish,

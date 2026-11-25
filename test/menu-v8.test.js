@@ -126,7 +126,7 @@ test('migration v7 → v8: an untouched phone ends up like a new install, histor
   const state = normalizeState(blob);
   assert.equal(JSON.stringify(blob), before, 'the input is not changed');
   assert.equal(state.schemaVersion, SCHEMA_VERSION);
-  assert.equal(SCHEMA_VERSION, 8);
+  assert.equal(SCHEMA_VERSION, 9);
 
   const fresh = defaultState();
   for (const id of [...NEW_IN_V8, ...SIDES_IN_V8]) assert.deepEqual(byId(state.dishes, id), byId(fresh.dishes, id), `${id} as a new install has it`);

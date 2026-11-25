@@ -218,12 +218,14 @@ test('never show: a dish marked "never show" is never picked', () => {
   assert.equal(pickDish([hidden], ctx([], { dishes: [hidden] })), null, 'nothing to pick if it is the only dish');
 });
 
-test('missing ingredients lower the score, more for each one', () => {
+test('when nothing is available, missing ingredients lower the score, more for each one', () => {
   const d = dish('pollo-curry');
-  const none = scoreDish(d, ctx());
-  const one = scoreDish(d, ctx([], { isMissing: (i) => i === 'curry' }));
-  const two = scoreDish(d, ctx([], { isMissing: (i) => i === 'curry' || i === 'crema' }));
+  const none = scoreDish(d, ctx([], { pantryEmpty: true }));
+  const one = scoreDish(d, ctx([], { pantryEmpty: true, isMissing: (i) => i === 'curry' }));
+  const two = scoreDish(d, ctx([], { pantryEmpty: true, isMissing: (i) => i === 'curry' || i === 'crema' }));
   assert.ok(none > one && one > two);
+  // With something available, scoreDish leaves them to probabilities() (#52).
+  assert.equal(scoreDish(d, ctx([], { isMissing: (i) => i === 'curry' })), none);
 });
 
 test('simple, quick dishes beat ambitious ones on a neutral day', () => {
