@@ -1,7 +1,7 @@
 // UI. All text comes from strings.js, all scoring from scoring.js, all state
 // changes go through state.js and are saved by commit().
 
-import { ACTIONS, FAVORITES_MAX, MOOD_IDS, afterMealDue, mainCandidates, mealMinutes, nothingAvailable, pickDish, pickSide, probabilities, sidesOf } from './scoring.js';
+import { ACTIONS, FAVORITES_MAX, MOOD_IDS, afterMealDue, mainCandidates, mealMinutes, nothingAvailable, outOfIdeas, pickCard, pickDish, pickSide, probabilities, sidesOf } from './scoring.js';
 import { PARAMS, PARAM_GROUPS, applyParams, cleanParams, defaultParam, paramSource, paramValue, paramsJson } from './params.js';
 import {
   MAX_MAINS,
@@ -9,10 +9,13 @@ import {
   addIngredients,
   allIngredients,
   allMains,
+  bannedToday,
   boughtAll,
   cleanDish,
   cleanNames,
   cleanRecipe,
+  declineDelivery,
+  deliveryDeclinedToday,
   favoriteCount,
   hasEverything,
   hasNothing,
@@ -128,6 +131,7 @@ applyTuning();
 const ui = {
   tab: 'today',
   currentId: null, // dish on the suggestion card (always a main)
+  placed: null, // a main put on the card on purpose (a friend's 💞): it shows even when the ideas have run out (#53)
   sideId: null, // the side shown with it, or null ("sin acompañamiento", or a complete dish)
   sideFor: null, // the card the side was drawn for: a new card draws a new side
   pinnedSide: null, // 📌 a side the user fixed: only mains that go with it are suggested
@@ -316,8 +320,13 @@ function pick(exclude = []) {
   const variety = state.settings.variety;
   const ctx = scoringContext();
   const candidates = cardCandidates();
-  // Don't show the same card twice in a row, unless it's the only one left.
-  return pickDish(candidates, ctx, variety, { exclude }) ?? pickDish(candidates, ctx, variety);
+  return pickCard(candidates, ctx, variety, { exclude, banned: bannedToday(state.events, ctx.now) });
+}
+
+/** Every main the card could draw is banned today (#53), and the card isn't one put there on purpose. */
+function ranOut() {
+  if (ui.currentId && ui.currentId === ui.placed) return false;
+  return outOfIdeas(cardCandidates(), scoringContext(), bannedToday(state.events, Date.now()));
 }
 
 function nextCard() {
@@ -403,7 +412,7 @@ function changeSideForMissing(missing) {
   const main = dishById(ui.currentId);
   const old = ui.sideId;
   if (!main || !old) return;
-  logCardAction(state, old, ACTIONS.MISSING_REJECT, missing);
+  logCardAction(state, old, ACTIONS.MISSING_REJECT, missing, Date.now(), null, true); // as a side: no ban on it as a main (#53)
   if (ui.pinnedSide === old) ui.pinnedSide = null;
   // Don't offer a side that needs what just ran out (papas fritas after "no hay papa").
   const options = sidesOf(main, state.dishes);
@@ -487,7 +496,23 @@ function flyCard(toRight, action) {
 const swipeRight = () => flyCard(true, () => cook(ACTIONS.COOK));
 const swipeLeft = () => flyCard(false, () => reject(ACTIONS.REJECT));
 
-function attachSwipe(card) {
+// The delivery card (#53): 👉 opens the wheel, 👈 declines it for today.
+const deliveryRight = () =>
+  flyCard(true, () => {
+    wheelView.open(); // the card is still there when the wheel closes
+  });
+const deliveryLeft = () =>
+  flyCard(false, () => {
+    declineDelivery(state, Date.now());
+    commit();
+    focusToday();
+  });
+
+// What the arrow keys do on Hoy right now: set by viewToday(), null when nothing is swipeable.
+let cardKeys = null;
+
+/** Drag to swipe. `right`/`left` run past the threshold, `tap` (optional) on a tap. */
+function attachSwipe(card, { right, left, tap = null }) {
   let startX = 0;
   let dx = 0;
   let pointerId = null;
@@ -521,11 +546,11 @@ function attachSwipe(card) {
     if (e.pointerId !== pointerId) return;
     pointerId = null;
     card.classList.remove('dragging');
-    if (dx > SWIPE_THRESHOLD) swipeRight();
-    else if (dx < -SWIPE_THRESHOLD) swipeLeft();
+    if (dx > SWIPE_THRESHOLD) right();
+    else if (dx < -SWIPE_THRESHOLD) left();
     else {
       reset();
-      if (Math.abs(dx) < TAP_SLOP) openRecipe(ui.currentId, ui.sideId); // a tap, not a drag
+      if (tap && Math.abs(dx) < TAP_SLOP) tap(); // a tap, not a drag
     }
   });
   card.addEventListener('pointercancel', () => {
@@ -607,25 +632,45 @@ function viewToday() {
     h('div', { class: 'variety' }, h('span', { class: 'label' }, t('variety')), varietyControl()),
   );
 
+  cardKeys = null;
   if (ui.cooked && dishById(ui.cooked.dishId)) return [header, viewCooked()];
 
   ensureCurrent();
-  const dish = dishById(ui.currentId);
   const pinned = dishById(ui.pinnedSide);
+  // The ideas have run out (#53): no card for now. Drawn again when a dish comes back.
+  const out = ranOut();
+  if (out) ui.currentId = ui.sideFor = ui.sideId = null;
+  const dish = dishById(ui.currentId);
   const pinNote =
     pinned &&
     h('div', { class: 'pin-note', role: 'status' }, h('span', null, t('pinnedNote', { name: pinned.name.toLocaleLowerCase('es') })), button(t('unpinShort'), unpin, 'small ghost'));
   if (!dish && pinned) {
+    const name = pinned.name.toLocaleLowerCase('es');
     return [
       header,
       h(
         'section',
         { class: 'empty' },
         h('div', { class: 'empty-emoji', 'aria-hidden': 'true' }, pinned.emoji),
-        h('h2', null, t('pinnedNone', { name: pinned.name.toLocaleLowerCase('es') })),
-        h('p', null, t('pinnedNoneText', { name: pinned.name.toLocaleLowerCase('es') })),
+        h('h2', null, t(out ? 'pinnedRanOut' : 'pinnedNone', { name })),
+        h('p', null, t(out ? 'pinnedRanOutText' : 'pinnedNoneText', { name })),
         button(`📌 ${t('unpinShort')}`, unpin, 'primary'),
       ),
+    ];
+  }
+  if (out && !deliveryDeclinedToday(state, Date.now())) return [header, ...viewDeliveryCard()];
+  if (out) {
+    return [
+      header,
+      h(
+        'section',
+        { class: 'empty out-of-ideas' },
+        h('div', { class: 'empty-emoji', 'aria-hidden': 'true' }, '🤷'),
+        h('h2', null, t('outOfIdeasTitle')),
+        h('p', null, t('outOfIdeasText')),
+        button(`📖 ${t('pickFromList')}`, openPicker, 'pick-open'),
+      ),
+      wheelButton('wide'),
     ];
   }
   if (!dish) {
@@ -713,7 +758,8 @@ function viewToday() {
       cardFoot(dish, side),
     ),
   );
-  attachSwipe(card);
+  attachSwipe(card, { right: swipeRight, left: swipeLeft, tap: () => openRecipe(ui.currentId, ui.sideId) });
+  cardKeys = { right: swipeRight, left: swipeLeft };
 
   return [
     header,
@@ -728,6 +774,34 @@ function viewToday() {
     ),
     h('div', { class: 'row more' }, button(`📖 ${t('pickFromList')}`, openPicker, 'pick-open'), wheelButton()),
     h('p', { class: 'hint' }, t('swipeHint')),
+  ];
+}
+
+/** "¿Pedimos?" (#53): when the ideas run out, 👉 opens the delivery wheel and 👈 declines it for today. */
+function viewDeliveryCard() {
+  const card = h(
+    'article',
+    { class: 'card delivery-card', 'aria-label': t('deliveryCardTitle') },
+    h(
+      'div',
+      { class: 'card-art', style: 'background:linear-gradient(135deg, #f6d365, #fda085)' },
+      h('span', { class: 'card-emoji', 'aria-hidden': 'true' }, '🛵'),
+      h('span', { class: 'stamp stamp-yes', 'aria-hidden': 'true' }, `👉 ${t('deliveryYes')}`),
+      h('span', { class: 'stamp stamp-no', 'aria-hidden': 'true' }, `👈 ${t('deliveryNo')}`),
+    ),
+    h('div', { class: 'card-body' }, h('h2', null, t('deliveryCardTitle')), h('p', null, t('deliveryCardText'))),
+  );
+  attachSwipe(card, { right: deliveryRight, left: deliveryLeft });
+  cardKeys = { right: deliveryRight, left: deliveryLeft };
+  return [
+    h('div', { class: 'card-area' }, card),
+    h(
+      'div',
+      { class: 'actions' },
+      h('button', { type: 'button', class: 'action no', onclick: deliveryLeft }, h('span', { 'aria-hidden': 'true' }, '👈'), t('deliveryNo')),
+      h('button', { type: 'button', class: 'action yes', onclick: deliveryRight }, h('span', { 'aria-hidden': 'true' }, '👉'), t('deliveryYes')),
+    ),
+    h('div', { class: 'row more' }, button(`📖 ${t('pickFromList')}`, openPicker, 'pick-open')),
   ];
 }
 
@@ -1976,6 +2050,7 @@ function showOnToday(dish) {
     setTimeout(() => ui.banners.includes(banner) && dropBanner('pin'), 6000);
   }
   ui.currentId = dish.id;
+  ui.placed = dish.id; // on purpose: it shows even if banned today and the ideas have run out (#53)
   ui.keepCard = dish.id;
   ui.sideFor = null;
   ui.cooked = null;
@@ -2444,7 +2519,7 @@ function tuningRow(p) {
 /** What the numbers do right now: the wheel's cook share today and the most likely dishes. */
 function tuningPreview() {
   const cook = wheelStats(state.deliveries, Date.now()).cook;
-  const top = probabilities(mainCandidates(state.dishes), scoringContext(), state.settings.variety)
+  const top = probabilities(mainCandidates(state.dishes), scoringContext(), state.settings.variety, [...bannedToday(state.events, Date.now())])
     .sort((a, b) => b.p - a.p)
     .slice(0, 5)
     .map((r) => `${r.dish.name} ${Math.round(r.p * 100)}%`);
@@ -3165,8 +3240,8 @@ document.addEventListener('keydown', (e) => {
   }
   if (ui.tab !== 'today' || ui.wheel || ui.cooked || ui.sheet || ui.sideSheet || ui.favorites || ui.mood || ui.recipe || ui.friends || ui.afterMeal) return;
   if (e.target.closest?.('input, textarea, select')) return;
-  if (e.key === 'ArrowRight') swipeRight();
-  else if (e.key === 'ArrowLeft') swipeLeft();
+  if (e.key === 'ArrowRight') cardKeys?.right();
+  else if (e.key === 'ArrowLeft') cardKeys?.left();
 });
 
 window.addEventListener('online', () => {

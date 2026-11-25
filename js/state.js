@@ -32,14 +32,15 @@ export function defaultState() {
   return {
     schemaVersion: SCHEMA_VERSION,
     dishes: STARTER_DISHES.map(copyStarter),
-    events: [], // {dishId, action, time, missing[]} (+ sideId on meals; mealTime, verdict on afterMeal)
+    events: [], // {dishId, action, time, missing[]} (+ sideId on meals; mealTime, verdict on afterMeal; asSide on a side swapped away)
     missing: [], // the shopping list: ingredients marked missing
     inStock: [], // manual pantry mode: ingredients the user says they have
     // favoritesAsked: the "choose your favourites" question was answered or skipped.
     // params: this phone's tuning (params.js), {key: number}; empty = the defaults.
     // mood: the last answer to "¿Cómo está nuestro cocinero hoy?", {day: 'YYYY-MM-DD', id}; null = never asked.
     // groups: the friends' groups this phone is in (group.js, #23, #33); [] = none.
-    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null, groups: [], pantryAdded: [] },
+    // deliveryDeclined: the day the delivery card was swiped away (#53), {day: 'YYYY-MM-DD'}; null = not today.
+    settings: { pantryMode: 'lazy', variety: 'medium', favoritesAsked: false, portions: PORTIONS.default, params: {}, mood: null, groups: [], pantryAdded: [], deliveryDeclined: null },
     cuisines: [...DEFAULT_CUISINES], // the delivery wheel's slices
     deliveries: [], // {time, cuisine | null, manual?: true}
   };
@@ -124,6 +125,7 @@ function cleanEvent(raw) {
     missing: cleanNames(raw.missing),
   };
   if (isEaten(raw) && raw.sideId != null && String(raw.sideId) !== '') event.sideId = String(raw.sideId);
+  if (raw.asSide === true) event.asSide = true; // a side swapped away (#53): not a "no" to it as a main
   if (raw.action === ACTIONS.AFTER_MEAL) {
     event.mealTime = Number(raw.mealTime);
     event.verdict = raw.verdict === 'up' || raw.verdict === 'down' ? raw.verdict : null;
@@ -375,6 +377,8 @@ export function normalizeState(input) {
       groups: cleanGroups(settings.groups),
       // Ingredients added from Despensa's search (#42), so they stay listed when not had (also optional, no schema step).
       pantryAdded: cleanNames(settings.pantryAdded),
+      // The delivery card declined today (#53): optional too, and only today's counts.
+      deliveryDeclined: cleanDayMark(settings.deliveryDeclined),
     },
     cuisines: cleanCuisines(raw.cuisines),
     deliveries: (Array.isArray(raw.deliveries) ? raw.deliveries : [])
@@ -513,10 +517,11 @@ export function allMains(state) {
  * A meal (cook, cook anyway, pick) can carry the side it was eaten with:
  * the side gets the plain "cook" bump, whatever the main got.
  */
-export function logCardAction(state, dishId, action, missing = [], now = Date.now(), sideId = null) {
+export function logCardAction(state, dishId, action, missing = [], now = Date.now(), sideId = null, asSide = false) {
   const dish = state.dishes.find((d) => d.id === dishId);
   if (!dish) return null;
   const event = { dishId, action, time: now, missing: cleanNames(missing) };
+  if (asSide) event.asSide = true;
   const side = sideId && isEaten(event) ? state.dishes.find((d) => d.id === sideId && d.id !== dishId) : null;
   if (side) event.sideId = side.id;
   state.events.push(event);
@@ -624,6 +629,33 @@ export function localDay(now) {
 function cleanMood(raw) {
   if (!raw || typeof raw !== 'object' || !MOOD_IDS.includes(raw.id)) return null;
   return typeof raw.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.day) ? { day: raw.day, id: raw.id } : null;
+}
+
+// ---- A "no" lasts all day (#53) -------------------------------------------
+
+/**
+ * The mains banned for the rest of today: a 👈 or a 🛒 → "Otra opción" from
+ * the card since the start of the local day. A side swapped away for missing
+ * ingredients (`asSide`) isn't a "no" to it as a main.
+ */
+export function bannedToday(events, now) {
+  const today = localDay(now);
+  const ids = new Set();
+  for (const e of events) {
+    if ((e.action === ACTIONS.REJECT || e.action === ACTIONS.MISSING_REJECT) && !e.asSide && localDay(e.time) === today) ids.add(e.dishId);
+  }
+  return ids;
+}
+
+function cleanDayMark(raw) {
+  return raw && typeof raw === 'object' && typeof raw.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.day) ? { day: raw.day } : null;
+}
+
+/** "Se nos acabaron las ideas" instead of the delivery card: it was swiped away today. */
+export const deliveryDeclinedToday = (state, now) => state.settings.deliveryDeclined?.day === localDay(now);
+
+export function declineDelivery(state, now) {
+  state.settings.deliveryDeclined = { day: localDay(now) };
 }
 
 /** Today's answer, or null when it hasn't been asked today. */
