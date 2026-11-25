@@ -77,7 +77,7 @@ const STRINGS = {
     pinnedRanOut: 'Ya pasamos por todo lo que va con {name}.',
     pinnedRanOutText: 'Soltalo para ver las demás comidas.',
     deliveryCardTitle: '¿Pedimos?',
-    deliveryCardText: 'Ya pasamos por todas las comidas de hoy.',
+    deliveryCardText: 'Ya pasamos por todas las que podés hacer hoy.',
     deliveryYes: 'Pedir',
     deliveryNo: 'Hoy no',
     outOfIdeasTitle: 'Se nos acabaron las ideas, disculpá 🤷',

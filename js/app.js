@@ -131,7 +131,7 @@ applyTuning();
 const ui = {
   tab: 'today',
   currentId: null, // dish on the suggestion card (always a main)
-  placed: null, // a main put on the card on purpose (a friend's 💞): it shows even when the ideas have run out (#53)
+  placed: null, // a main put on the card on purpose (a friend's 💞): it shows even when the ideas have run out (#53); any draw clears it
   sideId: null, // the side shown with it, or null ("sin acompañamiento", or a complete dish)
   sideFor: null, // the card the side was drawn for: a new card draws a new side
   pinnedSide: null, // 📌 a side the user fixed: only mains that go with it are suggested
@@ -333,6 +333,7 @@ function nextCard() {
   ui.keepCard = null;
   dropBanner('pin');
   ui.currentId = pick(ui.currentId ? [ui.currentId] : [])?.id ?? null;
+  ui.placed = null; // drawn, not put there: the same dish drawn later is an ordinary card
   ui.sideFor = null;
 }
 
@@ -341,6 +342,7 @@ function ensureCurrent() {
   const current = dishById(ui.currentId);
   if (!current || current.neverShow || !cardCandidates().includes(current)) {
     ui.currentId = pick()?.id ?? null;
+    ui.placed = null;
     ui.sideFor = null;
   }
   ensureSide();
@@ -503,7 +505,8 @@ const deliveryRight = () =>
   });
 const deliveryLeft = () =>
   flyCard(false, () => {
-    declineDelivery(state, Date.now());
+    // A card left on screen past midnight: today's bans have lapsed, so there is nothing to decline.
+    if (ranOut()) declineDelivery(state, Date.now());
     commit();
     focusToday();
   });
@@ -665,7 +668,6 @@ function viewToday() {
       h(
         'section',
         { class: 'empty out-of-ideas' },
-        h('div', { class: 'empty-emoji', 'aria-hidden': 'true' }, '🤷'),
         h('h2', null, t('outOfIdeasTitle')),
         h('p', null, t('outOfIdeasText')),
         button(`📖 ${t('pickFromList')}`, openPicker, 'pick-open'),
@@ -797,7 +799,7 @@ function viewDeliveryCard() {
     h('div', { class: 'card-area' }, card),
     h(
       'div',
-      { class: 'actions' },
+      { class: 'actions two' },
       h('button', { type: 'button', class: 'action no', onclick: deliveryLeft }, h('span', { 'aria-hidden': 'true' }, '👈'), t('deliveryNo')),
       h('button', { type: 'button', class: 'action yes', onclick: deliveryRight }, h('span', { 'aria-hidden': 'true' }, '👉'), t('deliveryYes')),
     ),
