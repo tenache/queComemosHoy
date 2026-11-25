@@ -194,8 +194,10 @@ export function nothingAvailable(dishes, isMissing) {
 
 /**
  * The score between the ideally good meal and the ideally bad one with today's
- * weights (#52): every term at its best minus at its worst. 12 by default.
- * Sides get no friends boost; the same gap for them is harmless.
+ * weights (#52): every term at its best minus at its worst, the friends boost
+ * included. 12 by default. A dish no friend picked (and every side) can't get
+ * that close to the worst one, so for it the odds are wider than MISSING's
+ * (about 15:1 instead of 2:1 at T = 1): stricter, never looser.
  */
 export function idealGap(mood = null) {
   const W = moodWeights(mood);
@@ -226,7 +228,8 @@ export function missingLogOdds(dish, isMissing) {
  *   asSide:       true when the dishes are being scored as sides: each counts alone, without sides of its own,
  *   mood:         today's answer to the mood question (MOOD_IDS), or null,
  *   friends:      Map dishId → how many friends picked it today or yesterday (#23), or null,
- *   pantryEmpty:  nothingAvailable() over all dishes (#52); worked out from `dishes` when left out,
+ *   pantryEmpty:  nothingAvailable() over all dishes (#52); when left out, worked out from `dishes`
+ *                 (or from this dish alone if `dishes` is empty),
  * }
  */
 export function scoreDish(dish, ctx) {
@@ -336,6 +339,8 @@ export function probabilities(dishes, ctx, variety = 'medium', exclude = []) {
 
   const swiped = recentlySwiped(fullCtx.events ?? [], fullCtx.now);
   const least = Math.min(...penalties);
+  // Equal penalties come from the same sums of the same logs, so they differ by rounding at most
+  // (~1e-14 at these sizes); 1e-9 is far below any real difference (ln 2 × T ≥ 0.07).
   const inGroup = penalties.map((x) => x <= least + 1e-9);
   const floor = FLOOR.fairShareFraction / inGroup.filter(Boolean).length;
   const floored = candidates.map((d, i) => inGroup[i] && !swiped.has(d.id));

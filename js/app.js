@@ -966,7 +966,9 @@ function viewDishForm() {
   });
   const emoji = h('input', { id: 'f-emoji', type: 'text', value: dish.emoji, autocomplete: 'off', class: 'emoji-input' });
   const ingredients = h('input', { id: 'f-ingredients', type: 'text', value: dish.ingredients.join(', '), autocomplete: 'off', autocapitalize: 'none' });
-  // The 🔑 ingredients (#52): one chip per ingredient. Changing an ingredient's text drops its key.
+  // The 🔑 ingredients (#52): one chip per ingredient. Changing an ingredient's text drops its key
+  // on save (cleanDish keeps only keys among the ingredients), not while typing: "spato" on the way
+  // to "sal, pato" mustn't lose pato's 🔑.
   const keys = new Set(dish.keyIngredients ?? []);
   const keyChips = h('div', { class: 'chips', role: 'group', 'aria-labelledby': 'f-keys-label' });
   const keyChip = (name) => {
@@ -986,11 +988,7 @@ function viewDishForm() {
     paint();
     return chip;
   };
-  const syncKeys = () => {
-    const current = splitList(ingredients.value);
-    for (const k of [...keys]) if (!current.includes(k)) keys.delete(k);
-    keyChips.replaceChildren(...current.map(keyChip));
-  };
+  const syncKeys = () => keyChips.replaceChildren(...splitList(ingredients.value).map(keyChip));
   ingredients.addEventListener('input', syncKeys);
   syncKeys();
   const mains = h('input', { id: 'f-mains', type: 'text', value: dish.mains.join(', '), autocomplete: 'off', autocapitalize: 'none' });

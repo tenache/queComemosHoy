@@ -429,7 +429,7 @@ const STRINGS = {
     'param:WEIGHTS.favorite': 'Empujón de las favoritas',
     'paramHelp:WEIGHTS.favorite': 'Cuánto suben las comidas con ⭐.',
     'param:MISSING.secondaryOdds': 'Lo que tenés primero: un ingrediente que falta (×)',
-    'paramHelp:MISSING.secondaryOdds': 'La peor comida que podés hacer sale esta cantidad de veces más que la mejor comida a la que le falta un ingrediente. Dos que faltan: multiplicá.',
+    'paramHelp:MISSING.secondaryOdds': 'La peor comida que podés hacer sale esta cantidad de veces más que la mejor comida posible (con todo a favor, hasta amigos que la eligieron) a la que le falta un ingrediente. Sin amigos de por medio, la diferencia es todavía mayor. Dos que faltan: multiplicá.',
     'param:MISSING.keyOdds': 'Lo que tenés primero: un ingrediente 🔑 que falta (×)',
     'paramHelp:MISSING.keyOdds': 'Lo mismo, cuando lo que falta es un ingrediente 🔑, sin el que no es esa comida.',
     'param:WEIGHTS.missingIngredient': 'Castigo por ingrediente que falta, sin despensa',

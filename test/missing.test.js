@@ -259,3 +259,13 @@ test('keyIngredients survive export and import (a JSON round trip)', () => {
   assert.deepEqual(back.dishes.find((d) => d.id === 'mio').keyIngredients, ['b']);
   assert.deepEqual(back, s);
 });
+
+test('without friends (and for sides) the best dish is G − friends above the worst: the odds are wider, never narrower', () => {
+  applyParams({ 'FLOOR.fairShareFraction': 0 });
+  for (const T of [0.7, 1, 1.5]) {
+    applyParams({ 'FLOOR.fairShareFraction': 0, 'TEMPERATURE.medium': T });
+    const want = MISSING.secondaryOdds * Math.exp(FRIENDS.max / T);
+    close(ratio([ibm(), igm()], ['plata'], 'medium', { friends: null }), want, `no group, T=${T}`);
+    close(ratio([ibm(), igm()], ['plata'], 'medium', { friends: null, asSide: true }), want, `as sides, T=${T}`);
+  }
+});
